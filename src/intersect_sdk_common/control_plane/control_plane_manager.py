@@ -44,10 +44,13 @@ class ControlPlaneManager:
     def __init__(
         self,
         control_configs: list[ControlPlaneConfig],
+        queue_name_generator: Callable[[str], str],
     ) -> None:
         """Basic constructor.
 
         Some interaction with message brokers can change based on whether or not a Service or a Client is calling it.
+
+        queue_name_generator should be a hardcoded value for Core Services, the SDK should provide its own function to generate queue names.
         """
         self._control_providers = [
             _create_control_provider(config, self.get_subscription_channels)
@@ -58,6 +61,7 @@ class ControlPlaneManager:
         self._ready = False
         # topics_to_handlers are managed here and transcend connections/disconnections to the broker
         self._topics_to_handlers: dict[str, TopicHandler] = {}
+        self._queue_name_generator = queue_name_generator
 
     def add_subscription_channel(
         self, channel: str, callbacks: set[MessageCallback], persist: bool
@@ -78,7 +82,7 @@ class ControlPlaneManager:
         """
         topic_handler = self._topics_to_handlers.get(channel)
         if topic_handler is None:
-            topic_handler = TopicHandler(persist)
+            topic_handler = TopicHandler(persist, self._queue_name_generator)
             topic_handler.callbacks |= callbacks
             self._topics_to_handlers[channel] = topic_handler
         else:

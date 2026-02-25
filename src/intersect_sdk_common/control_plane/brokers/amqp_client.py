@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import functools
 import threading
-from hashlib import sha384
 from typing import TYPE_CHECKING
 
 import pika
@@ -61,19 +60,6 @@ class _ConsumerTagInfo:
 
     def __repr__(self) -> str:
         return f'{self.consumer_tag} -- OBTAINED: {self.consumer_tag_obtained()}'
-
-
-def _get_queue_name(routing_key: str) -> str:
-    """Generate a valid queue name from the routing key.
-
-    We want to always be able to generate the same queue name from the routing key every time,
-    so we don't use UUIDs or want the broker to generate a key name.
-
-    We must also keep the length under 128 characters.
-
-    See https://www.rabbitmq.com/docs/queues#names for a complete reference.
-    """
-    return sha384(routing_key.encode()).hexdigest()
 
 
 # TODO we should be handling hierarchy parts as a list of strings until they get to the client
@@ -418,10 +404,11 @@ class AMQPClient(BrokerClient):
                 channel=channel,
                 topic=amqp_topic,
                 persist=topic_handler.topic_persist,
+                queue_name=topic_handler.queue_name_generator(topic),
             )
             self._connection.ioloop.add_callback_threadsafe(cb)
 
-    def _create_queue(self, channel: Channel, topic: str, persist: bool) -> None:
+    def _create_queue(self, channel: Channel, topic: str, persist: bool, queue_name: str) -> None:
         """Create a queue on the broker.
 
         This can be called directly from the AMQP Client if the subscribed connection already has a Channel it's listening to.
@@ -432,12 +419,13 @@ class AMQPClient(BrokerClient):
             persist: boolean value to determine how we manage the queue.
               If True, this queue will persist forever, even on application or broker shutdown, and we need a persistent name.
               If False, we will generate a temporary queue using the broker's naming scheme.
+            queue_name: The name of the queue to create, if persist is True.
         """
         cb = functools.partial(
             self._on_queue_declareok, channel=channel, topic=topic, persist=persist
         )
         channel.queue_declare(
-            queue=_get_queue_name(topic)
+            queue=queue_name
             if persist
             else '',  # if we're transient, let the broker generate a name for us
             durable=persist,
