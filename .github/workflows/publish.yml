@@ -23,7 +23,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: "Build package"
-        run: uv build
+        run: uv build --no-create-gitignore
       - name: Publish package to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
         with:

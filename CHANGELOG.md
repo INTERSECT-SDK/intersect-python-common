@@ -11,4 +11,4 @@ Initial reorganization of SDK packaging.
 - Added new argument to `ControlPlaneManager.add_subscription_channel()` which specifies a queue name to use.
 - Add `is_root` option to `ControlPlaneConfig` in preparation for Registry Service.
 
-[0.9.1]: https://github.com/INTERSECT-SDK/python-sdk-common/releases/tag/0.9.1
+[0.9.1]: https://github.com/INTERSECT-SDK/intersect-python-common/releases/tag/0.9.1
