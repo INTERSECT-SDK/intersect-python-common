@@ -122,6 +122,21 @@ class ControlPlaneConfig:
     NOTE: INTERSECT currently only supports AMQP and MQTT.
     """
 
+    # TODO default this to False once the registry service is in place
+    is_root: bool = True
+    """
+    Whether or not the broker credentials are for connecting as a root user.
+
+    This should be True IF:
+      - You are a Core Service
+      - You are an SDK Client or Service, but your message broker is hosted locally.
+
+      This should be False IF:
+        - You are an SDK Client or Service, and the broker you're connected to is remote.
+
+    This is important for specific implementations; the Registry Service configures queues for microservices, but Core Services configure their own queues themselves.
+    """
+
 
 @dataclass
 class DataStoreConfig:

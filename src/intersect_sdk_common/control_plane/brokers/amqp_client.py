@@ -96,6 +96,7 @@ class AMQPClient(BrokerClient):
         username: str,
         password: str,
         topics_to_handlers: Callable[[], dict[str, TopicHandler]],
+        is_root: bool,
     ) -> None:
         """The default constructor.
 
@@ -105,6 +106,7 @@ class AMQPClient(BrokerClient):
             username: username credentials for AMQP broker
             password: password credentials for AMQP broker
             topics_to_handlers: callback function which gets the topic to handler map from the channel manager
+            is_root: Whether or not the client can configure exchanges and queues themselves (core services), or if this must be delegated to a Core Service (SDK Clients/Services)
         """
         self._connection_params = pika.ConnectionParameters(
             host=host,
@@ -117,6 +119,8 @@ class AMQPClient(BrokerClient):
             blocked_connection_timeout=5.0,
             retry_delay=0.5,
         )
+
+        self._is_root = is_root
 
         # The pika connection to the broker
         self._connection: pika.adapters.SelectConnection = None
@@ -225,7 +229,6 @@ class AMQPClient(BrokerClient):
         persist: If True, we will create an idempotent queue name which should persist
           even on broker or application shutdown. If False, we will allow the server to create a unique
           queue name, and the queue will be destroyed once the associated channel is closed.
-
         """
         topic = _hierarchy_2_amqp(topic)
         cb = functools.partial(
@@ -365,13 +368,17 @@ class AMQPClient(BrokerClient):
         self._channel_out = channel
         cb = functools.partial(self._on_channel_closed, channel_num=channel_num)
         self._channel_out.add_on_close_callback(cb)
-        # producer flag should first make sure the exchange exists before publishing
-        channel.exchange_declare(
-            exchange=_INTERSECT_MESSAGE_EXCHANGE,
-            exchange_type='topic',
-            durable=True,
-            callback=lambda _frame: self._channel_flags.set_nth_flag(channel_num),
-        )
+        if self._is_root:
+            # if root, producer flag should first make sure the exchange exists before publishing
+            channel.exchange_declare(
+                exchange=_INTERSECT_MESSAGE_EXCHANGE,
+                exchange_type='topic',
+                durable=True,
+                callback=lambda _frame: self._channel_flags.set_nth_flag(channel_num),
+            )
+        else:
+            # nonroot producers can assume they may publish immediately
+            self._channel_flags.set_nth_flag(channel_num)
         logger.info('AMQP: output channel ready')
 
     # CONSUMER #
@@ -382,10 +389,26 @@ class AMQPClient(BrokerClient):
         self._channel_flags.set_nth_flag(channel_num)
         cb_1 = functools.partial(self._on_channel_closed, channel_num=channel_num)
         self._channel_in.add_on_close_callback(cb_1)
-        cb_2 = functools.partial(self._on_exchange_declareok, channel=channel)
-        channel.exchange_declare(
-            exchange=_INTERSECT_MESSAGE_EXCHANGE, exchange_type='topic', durable=True, callback=cb_2
-        )
+        if self._is_root:
+            cb_2 = functools.partial(self._on_exchange_declareok, channel=channel)
+            channel.exchange_declare(
+                exchange=_INTERSECT_MESSAGE_EXCHANGE,
+                exchange_type='topic',
+                durable=True,
+                callback=cb_2,
+            )
+        else:
+            for topic, topic_handler in self._topics_to_handlers().items():
+                amqp_topic = _hierarchy_2_amqp(topic)
+                cb = functools.partial(
+                    self._setup_basic_qos,
+                    None,
+                    channel=channel,
+                    topic=amqp_topic,
+                    persist=topic_handler.topic_persist,
+                    queue_name=topic_handler.queue_name,
+                )
+                self._connection.ioloop.add_callback_threadsafe(cb)
 
     def _on_exchange_declareok(self, _unused_frame: Frame, channel: Channel) -> None:
         """Create a queue on the broker (called from AMQP).
@@ -404,7 +427,7 @@ class AMQPClient(BrokerClient):
                 channel=channel,
                 topic=amqp_topic,
                 persist=topic_handler.topic_persist,
-                queue_name=topic_handler.queue_name_generator(topic),
+                queue_name=topic_handler.queue_name,
             )
             self._connection.ioloop.add_callback_threadsafe(cb)
 
@@ -448,7 +471,7 @@ class AMQPClient(BrokerClient):
         """
         queue_name = frame.method.queue
         cb = functools.partial(
-            self._on_queue_bindok,
+            self._setup_basic_qos,
             channel=channel,
             topic=topic,
             queue_name=queue_name,
@@ -461,9 +484,9 @@ class AMQPClient(BrokerClient):
             callback=cb,
         )
 
-    def _on_queue_bindok(
+    def _setup_basic_qos(
         self,
-        _unused_frame: Frame,
+        _unused_frame: Frame | None,
         channel: Channel,
         topic: str,
         queue_name: str,
@@ -472,7 +495,7 @@ class AMQPClient(BrokerClient):
         """Sets up basic QOS on the current channel.
 
         Args:
-            _unused_frame: AMQP response from binding to the queue. Ignored.
+            _unused_frame: AMQP response from binding to the queue. Ignored. Also explicitly set to "None" if called from nonroot configuration.
             channel: The Channel being instantiated.
             topic: Name of the topic on the broker.
             queue_name: The name of the queue on the AMQP broker.

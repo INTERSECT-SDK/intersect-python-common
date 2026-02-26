@@ -1,7 +1,5 @@
 """Attributes associated with a specific pub/sub topic."""
 
-from collections.abc import Callable
-
 from .definitions import MessageCallback
 
 
@@ -16,16 +14,16 @@ class TopicHandler:
     topic_persist: bool
     """Whether or not a topic queue is expected to persist on the message broker."""
 
-    queue_name_generator: Callable[[str], str]
-    """A pointer to the function which generates the queue name.."""
+    queue_name: str
+    """The name of the queue to subscribe to for this topic."""
 
-    def __init__(self, topic_persist: bool, queue_name_generator: Callable[[str], str]) -> None:
+    def __init__(self, topic_persist: bool, queue_name: str) -> None:
         """Initialize a TopicHandler instance.
 
         Args:
             topic_persist: Whether the topic queue is expected to persist on the message broker.
-            queue_name_generator: A pointer to the function which generates the queue name.
+            queue_name: The name of the queue to subscribe to for this topic.
         """
         self.callbacks = set()
         self.topic_persist = topic_persist
-        self.queue_name_generator = queue_name_generator
+        self.queue_name = queue_name

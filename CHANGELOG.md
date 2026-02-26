@@ -2,8 +2,13 @@
 
 We follow [Common Changelog](https://common-changelog.org/) formatting for this document.
 
-## [0.9.0] - 2026-02-11
+## [0.9.1] - 2026-02-25
 
 Initial reorganization of SDK packaging.
 
-[0.9.0]: https://github.com/INTERSECT-SDK/python-sdk-common/releases/tag/0.9.0
+### Changed
+
+- Added new argument to `ControlPlaneManager.add_subscription_channel()` which specifies a queue name to use.
+- Add `is_root` option to `ControlPlaneConfig` in preparation for Registry Service.
+
+[0.9.1]: https://github.com/INTERSECT-SDK/python-sdk-common/releases/tag/0.9.1
