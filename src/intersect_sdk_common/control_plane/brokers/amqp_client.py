@@ -159,7 +159,8 @@ class AMQPClient(BrokerClient):
     def disconnect(self) -> None:
         """Close all connections."""
         self._should_disconnect = True
-        for topic, tag_info in self._topics_to_consumer_tags.items():
+        # make copy because the callback from basic_cancel will modify the original dict
+        for topic, tag_info in self._topics_to_consumer_tags.copy().items():
             self._cancel_consumer_tag(topic, tag_info.consumer_tag)
 
         # since _should_disconnect was set, _connection.ioloop.stop() will now execute after explicit connection close
