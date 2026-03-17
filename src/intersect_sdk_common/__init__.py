@@ -21,6 +21,7 @@ if TYPE_CHECKING:
     from .control_plane.definitions import MessageCallback
     from .core_definitions import IntersectDataHandler, IntersectMimeType
     from .data_plane.data_plane_manager import DataPlaneManager
+    from .exceptions import IntersectApplicationError, IntersectError, IntersectSetupError
     from .version import __version__, intersect_sdk_version_info, intersect_sdk_version_string
 
 __all__ = (
@@ -31,8 +32,11 @@ __all__ = (
     'DataStoreConfig',
     'DataStoreConfigMap',
     'HierarchyConfig',
+    'IntersectApplicationError',
     'IntersectDataHandler',
+    'IntersectError',
     'IntersectMimeType',
+    'IntersectSetupError',
     'MessageCallback',
     '__version__',
     'intersect_sdk_version_info',
@@ -52,6 +56,9 @@ __lazy_imports = {
     'IntersectDataHandler': '.core_definitions',
     'IntersectMimeType': '.core_definitions',
     'DataPlaneManager': '.data_plane.data_plane_manager',
+    'IntersectApplicationError': '.exceptions',
+    'IntersectError': '.exceptions',
+    'IntersectSetupError': '.exceptions',
     '__version__': '.version',
     'intersect_sdk_version_info': '.version',
     'intersect_sdk_version_string': '.version',
