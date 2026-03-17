@@ -17,3 +17,10 @@ class IntersectApplicationError(IntersectError):
 
     This exception should strictly be used for control flow - it should NEVER be a fatal exception
     """
+
+
+class IntersectSetupError(IntersectError):
+    """Exception thrown when there is an error in setting up the configuration of a Service/Client, PRIOR to publishing or handling a message.
+
+    This should be considered a fatal exception.
+    """

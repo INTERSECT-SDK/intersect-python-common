@@ -33,6 +33,13 @@ if TYPE_CHECKING:
 _MQTT_MAX_RETRIES = 10
 
 
+# TODO we should be handling hierarchy parts as a list of strings until they get to the client
+# this will be a breaking change, so only add it when ready to break
+def _hierarchy_2_mqtt(hierarchy: str) -> str:
+    """Take the hierarchy string format saved in the Service and map it to the MQTT topic format. Currently just covers wildcards."""
+    return hierarchy.replace('#', '+')
+
+
 class MQTTClient(BrokerClient):
     """Client for performing broker actions backed by a MQTT broker.
 
@@ -55,6 +62,7 @@ class MQTTClient(BrokerClient):
         username: str,
         password: str,
         topics_to_handlers: Callable[[], dict[str, TopicHandler]],
+        find_wildcard_handler: Callable[[str], TopicHandler | None],
         uid: str | None = None,
     ) -> None:
         """The default constructor.
@@ -65,6 +73,7 @@ class MQTTClient(BrokerClient):
             username: username credentials for MQTT broker
             password: password credentials for MQTT broker
             topics_to_handlers: callback function which gets the topic to handler map from the channel manager
+            find_wildcard_handler: callback function which gets the wildcard topic handler from the channel manager
             uid: A string representing the unique id to identify the client.
         """
         # Unique id for the MQTT broker to associate this client with
@@ -89,6 +98,7 @@ class MQTTClient(BrokerClient):
 
         # ConnectionManager callable state
         self._topics_to_handlers = topics_to_handlers
+        self._find_wildcard_handler = find_wildcard_handler
 
         # MQTT v3.1.1 automatically downgrades a QOS which is too high (good), but MQTT v5 will terminate the connection (bad)
         # see https://github.com/rabbitmq/rabbitmq-server/discussions/11842
@@ -155,8 +165,9 @@ class MQTTClient(BrokerClient):
         props = Properties(PacketTypes.PUBLISH)  # type: ignore[no-untyped-call]
         props.ContentType = content_type
         props.UserProperty = list(headers.items())
+        resolved_topic = _hierarchy_2_mqtt(topic)
         self._connection.publish(
-            topic, payload, qos=self._max_supported_qos if persist else 0, properties=props
+            resolved_topic, payload, qos=self._max_supported_qos if persist else 0, properties=props
         )
 
     def subscribe(self, topic: str, persist: bool) -> None:
@@ -166,8 +177,9 @@ class MQTTClient(BrokerClient):
             topic: Topic to subscribe to.
             persist: Determine if the associated message queue of the topic is long-lived (True) or not (False)
         """
+        resolved_topic = _hierarchy_2_mqtt(topic)
         # NOTE: RabbitMQ only works with QOS of 1 and 0, and seems to convert QOS2 to QOS1
-        self._connection.subscribe(topic, qos=2 if persist else 0, properties=None)
+        self._connection.subscribe(resolved_topic, qos=2 if persist else 0, properties=None)
 
     def unsubscribe(self, topic: str) -> None:
         """Unsubscribe from a topic over the pre-existing connection.
@@ -175,7 +187,8 @@ class MQTTClient(BrokerClient):
         Args:
           topic: Topic to unsubscribe from.
         """
-        self._connection.unsubscribe(topic)
+        resolved_topic = _hierarchy_2_mqtt(topic)
+        self._connection.unsubscribe(resolved_topic)
 
     def _on_message(
         self,
@@ -190,7 +203,11 @@ class MQTTClient(BrokerClient):
           userdata: MQTT user data
           message: MQTT message
         """
+        # NOTE: should not need to convert the MQTT topic to the protocol agnostic representation, as we only change the wildcard format (which won't show up as the message topic)
         topic_handler = self._topics_to_handlers().get(message.topic)
+        if not topic_handler:
+            # we may have included the topic in one of our wildcard handlers
+            topic_handler = self._find_wildcard_handler(message.topic)
         # Note that if we return prior to the callback, there will be no reply message
         if not topic_handler:
             logger.warning('Incompatible message topic %s, rejecting message', message.topic)

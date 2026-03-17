@@ -96,6 +96,7 @@ class AMQPClient(BrokerClient):
         username: str,
         password: str,
         topics_to_handlers: Callable[[], dict[str, TopicHandler]],
+        find_wildcard_handler: Callable[[str], TopicHandler | None],
         is_root: bool,
     ) -> None:
         """The default constructor.
@@ -106,6 +107,7 @@ class AMQPClient(BrokerClient):
             username: username credentials for AMQP broker
             password: password credentials for AMQP broker
             topics_to_handlers: callback function which gets the topic to handler map from the channel manager
+            find_wildcard_handler: callback function which gets the wildcard topic handler from the channel manager
             is_root: Whether or not the client can configure exchanges and queues themselves (core services), or if this must be delegated to a Core Service (SDK Clients/Services)
         """
         self._connection_params = pika.ConnectionParameters(
@@ -131,6 +133,8 @@ class AMQPClient(BrokerClient):
 
         # Callback to the topics_to_handler list inside of
         self._topics_to_handlers = topics_to_handlers
+        self._find_wildcard_handler = find_wildcard_handler
+
         # mapping of topics to callables which can unsubscribe from the topic
         self._topics_to_consumer_tags: dict[str, _ConsumerTagInfo] = {}
         self._consumer_tags_to_threads: dict[str, threading.Thread] = {}
@@ -595,6 +599,9 @@ class AMQPClient(BrokerClient):
 
         tth_key = _amqp_2_hierarchy(basic_deliver.routing_key)
         topic_handler = self._topics_to_handlers().get(tth_key)
+        if not topic_handler:
+            # we may have included the topic in one of our wildcard handlers
+            topic_handler = self._find_wildcard_handler(tth_key)
         if topic_handler:
             consumer_tag_info = self._topics_to_consumer_tags.get(basic_deliver.routing_key)
             if not consumer_tag_info:

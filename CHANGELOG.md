@@ -2,6 +2,12 @@
 
 We follow [Common Changelog](https://common-changelog.org/) formatting for this document.
 
+## Unreleased
+
+### Fixed
+
+- Made support for wildcards in the channel parameter of `ControlPlaneManager.add_subscription_channel()` consistent across protocols
+
 ## [0.9.1] - 2026-02-25
 
 Initial reorganization of SDK packaging.
