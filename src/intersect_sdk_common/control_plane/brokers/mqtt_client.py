@@ -22,12 +22,10 @@ from ...logger import logger
 from .broker_client import BrokerClient
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
-
     from paho.mqtt.client import DisconnectFlags
     from paho.mqtt.reasoncodes import ReasonCode
 
-    from ..topic_handler import TopicHandler
+    from ..control_plane_manager import ControlPlaneManager
 
 
 _MQTT_MAX_RETRIES = 10
@@ -37,7 +35,8 @@ _MQTT_MAX_RETRIES = 10
 # this will be a breaking change, so only add it when ready to break
 def _hierarchy_2_mqtt(hierarchy: str) -> str:
     """Take the hierarchy string format saved in the Service and map it to the MQTT topic format. Currently just covers wildcards."""
-    return hierarchy.replace('#', '+')
+    # return hierarchy.replace('#', '+')
+    return hierarchy.replace('*', '+')
 
 
 class MQTTClient(BrokerClient):
@@ -61,8 +60,7 @@ class MQTTClient(BrokerClient):
         port: int,
         username: str,
         password: str,
-        topics_to_handlers: Callable[[], dict[str, TopicHandler]],
-        find_wildcard_handler: Callable[[str], TopicHandler | None],
+        control_plane_manager: ControlPlaneManager,
         uid: str | None = None,
     ) -> None:
         """The default constructor.
@@ -72,8 +70,7 @@ class MQTTClient(BrokerClient):
             port: port number of MQTT broker
             username: username credentials for MQTT broker
             password: password credentials for MQTT broker
-            topics_to_handlers: callback function which gets the topic to handler map from the channel manager
-            find_wildcard_handler: callback function which gets the wildcard topic handler from the channel manager
+            control_plane_manager: reference to the ControlPlaneManager instance, remember to ONLY use functions which do not mutate state
             uid: A string representing the unique id to identify the client.
         """
         # Unique id for the MQTT broker to associate this client with
@@ -97,8 +94,7 @@ class MQTTClient(BrokerClient):
         self._connected_flag = threading.Event()
 
         # ConnectionManager callable state
-        self._topics_to_handlers = topics_to_handlers
-        self._find_wildcard_handler = find_wildcard_handler
+        self._control_plane_manager = control_plane_manager
 
         # MQTT v3.1.1 automatically downgrades a QOS which is too high (good), but MQTT v5 will terminate the connection (bad)
         # see https://github.com/rabbitmq/rabbitmq-server/discussions/11842
@@ -204,10 +200,17 @@ class MQTTClient(BrokerClient):
           message: MQTT message
         """
         # NOTE: should not need to convert the MQTT topic to the protocol agnostic representation, as we only change the wildcard format (which won't show up as the message topic)
-        topic_handler = self._topics_to_handlers().get(message.topic)
+        inmem_topic = message.topic
+        topic_handler = self._control_plane_manager.get_non_wildcard_subscription_channels().get(
+            inmem_topic
+        )
         if not topic_handler:
             # we may have included the topic in one of our wildcard handlers
-            topic_handler = self._find_wildcard_handler(message.topic)
+            wildcard_result = self._control_plane_manager.get_wildcard_topic_and_topic_handler(
+                inmem_topic
+            )
+            if wildcard_result:
+                _, topic_handler = wildcard_result
         # Note that if we return prior to the callback, there will be no reply message
         if not topic_handler:
             logger.warning('Incompatible message topic %s, rejecting message', message.topic)
@@ -298,7 +301,7 @@ class MQTTClient(BrokerClient):
                 self._max_supported_qos = properties.MaximumQoS
 
             self._connected_flag.set()
-            for topic, topic_handler in self._topics_to_handlers().items():
+            for topic, topic_handler in self._control_plane_manager.get_all_subscription_channels():
                 self.subscribe(topic, topic_handler.topic_persist)
         else:
             # This will generally suggest a misconfiguration

@@ -23,14 +23,12 @@ from ...utils.multi_flag_thread_event import MultiFlagThreadEvent
 from .broker_client import BrokerClient
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
-
     from pika.channel import Channel
     from pika.frame import Frame
     from pika.spec import Basic, BasicProperties
 
+    from ..control_plane_manager import ControlPlaneManager
     from ..definitions import MessageCallback
-    from ..topic_handler import TopicHandler
 
 
 _AMQP_MAX_RETRIES = 10
@@ -95,8 +93,7 @@ class AMQPClient(BrokerClient):
         port: int,
         username: str,
         password: str,
-        topics_to_handlers: Callable[[], dict[str, TopicHandler]],
-        find_wildcard_handler: Callable[[str], TopicHandler | None],
+        control_plane_manager: ControlPlaneManager,
         is_root: bool,
     ) -> None:
         """The default constructor.
@@ -106,8 +103,7 @@ class AMQPClient(BrokerClient):
             port: port number of AMQP broker
             username: username credentials for AMQP broker
             password: password credentials for AMQP broker
-            topics_to_handlers: callback function which gets the topic to handler map from the channel manager
-            find_wildcard_handler: callback function which gets the wildcard topic handler from the channel manager
+            control_plane_manager: reference to the ControlPlaneManager instance, remember to ONLY use functions which do not mutate state
             is_root: Whether or not the client can configure exchanges and queues themselves (core services), or if this must be delegated to a Core Service (SDK Clients/Services)
         """
         self._connection_params = pika.ConnectionParameters(
@@ -132,11 +128,11 @@ class AMQPClient(BrokerClient):
         self._thread: threading.Thread | None = None
 
         # Callback to the topics_to_handler list inside of
-        self._topics_to_handlers = topics_to_handlers
-        self._find_wildcard_handler = find_wildcard_handler
+        self._control_plane_manager = control_plane_manager
 
         # mapping of topics to callables which can unsubscribe from the topic
         self._topics_to_consumer_tags: dict[str, _ConsumerTagInfo] = {}
+        """NOTE: separators for topics in this object is '.' , not '/' """
         self._consumer_tags_to_threads: dict[str, threading.Thread] = {}
 
         self._should_disconnect = False
@@ -390,7 +386,7 @@ class AMQPClient(BrokerClient):
     def _on_input_channel_open(self, channel: Channel) -> None:
         channel_num = 1
         self._channel_in = channel
-        # consumer channel flag can be set immediately
+        # consumer channel flag can be set immediately (NOTE: this means that code which simultaneously creates Clients and Services will need to manually wait, to ensure that each application has made the basic_consume call to the broker before messages are published)
         self._channel_flags.set_nth_flag(channel_num)
         cb_1 = functools.partial(self._on_channel_closed, channel_num=channel_num)
         self._channel_in.add_on_close_callback(cb_1)
@@ -403,17 +399,7 @@ class AMQPClient(BrokerClient):
                 callback=cb_2,
             )
         else:
-            for topic, topic_handler in self._topics_to_handlers().items():
-                amqp_topic = _hierarchy_2_amqp(topic)
-                cb = functools.partial(
-                    self._setup_basic_qos,
-                    None,
-                    channel=channel,
-                    topic=amqp_topic,
-                    persist=topic_handler.topic_persist,
-                    queue_name=topic_handler.queue_name,
-                )
-                self._connection.ioloop.add_callback_threadsafe(cb)
+            self._create_all_queues(channel)
 
     def _on_exchange_declareok(self, _unused_frame: Frame, channel: Channel) -> None:
         """Create a queue on the broker (called from AMQP).
@@ -425,7 +411,17 @@ class AMQPClient(BrokerClient):
             _unused_frame: response from declaring the exchange on the broker (irrelevant).
             channel: The Channel being instantiated.
         """
-        for topic, topic_handler in self._topics_to_handlers().items():
+        self._create_all_queues(channel)
+
+    def _create_all_queues(self, channel: Channel) -> None:
+        """Create queues for all subscription channels on the broker.
+
+        This should only be called once we've verified that the exchange exists.
+
+        Args:
+            channel: The Channel being instantiated.
+        """
+        for topic, topic_handler in self._control_plane_manager.get_all_subscription_channels():
             amqp_topic = _hierarchy_2_amqp(topic)
             cb = functools.partial(
                 self._create_queue,
@@ -456,6 +452,7 @@ class AMQPClient(BrokerClient):
             queue=queue_name
             if persist
             else '',  # if we're transient, let the broker generate a name for us
+            passive=not self._is_root,
             durable=persist,
             exclusive=not persist,  # transient queues can be exclusive
             callback=cb,
@@ -597,17 +594,25 @@ class AMQPClient(BrokerClient):
             channel.basic_ack(basic_deliver.delivery_tag)
             return
 
-        tth_key = _amqp_2_hierarchy(basic_deliver.routing_key)
-        topic_handler = self._topics_to_handlers().get(tth_key)
+        amqp_routing_key_rep = basic_deliver.routing_key
+        manager_routing_key_rep = _amqp_2_hierarchy(basic_deliver.routing_key)
+        topic_handler = self._control_plane_manager.get_non_wildcard_subscription_channels().get(
+            manager_routing_key_rep
+        )
         if not topic_handler:
             # we may have included the topic in one of our wildcard handlers
-            topic_handler = self._find_wildcard_handler(tth_key)
+            wildcard_result = self._control_plane_manager.get_wildcard_topic_and_topic_handler(
+                manager_routing_key_rep
+            )
+            if wildcard_result:
+                manager_routing_key_rep, topic_handler = wildcard_result
+                amqp_routing_key_rep = _hierarchy_2_amqp(manager_routing_key_rep)
         if topic_handler:
-            consumer_tag_info = self._topics_to_consumer_tags.get(basic_deliver.routing_key)
+            consumer_tag_info = self._topics_to_consumer_tags.get(amqp_routing_key_rep)
             if not consumer_tag_info:
                 logger.error(
                     'Could not fetch consumer tag for topic %s, please inform an INTERSECT-SDK developer that you saw this message',
-                    tth_key,
+                    amqp_routing_key_rep,
                 )
                 return
             while not consumer_tag_info.consumer_tag_obtained():

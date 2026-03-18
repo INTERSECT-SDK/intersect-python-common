@@ -1,7 +1,7 @@
 """Wrapper around interacting with the control plane, which may be multiple brokers."""
 
+import itertools
 import re
-from collections.abc import Callable
 
 from ..config import ControlPlaneConfig
 from ..exceptions import IntersectSetupError
@@ -23,8 +23,7 @@ _CHANNEL_REGEX = re.compile(r'^[a-zA-Z0-9*/-]+[a-zA-Z0-9*#/-]$')
 
 def _create_control_provider(
     config: ControlPlaneConfig,
-    topic_handler_callback: Callable[[], dict[str, TopicHandler]],
-    find_wildcard_handler: Callable[[str], TopicHandler | None],
+    control_plane_manager: 'ControlPlaneManager',
 ) -> BrokerClient:
     if config.protocol == 'amqp0.9.1':
         from .brokers.amqp_client import (  # noqa: PLC0415 (lazy load all AMQP modules)
@@ -36,8 +35,7 @@ def _create_control_provider(
             port=config.port or 5672,
             username=config.username,
             password=config.password,
-            topics_to_handlers=topic_handler_callback,
-            find_wildcard_handler=find_wildcard_handler,
+            control_plane_manager=control_plane_manager,
             is_root=config.is_root,
         )
 
@@ -49,8 +47,7 @@ def _create_control_provider(
         port=config.port or 1883,
         username=config.username,
         password=config.password,
-        topics_to_handlers=topic_handler_callback,
-        find_wildcard_handler=find_wildcard_handler,
+        control_plane_manager=control_plane_manager,
     )
 
 
@@ -68,10 +65,7 @@ class ControlPlaneManager:
         queue_name_generator should be a hardcoded value for Core Services, the SDK should provide its own function to generate queue names.
         """
         self._control_providers = [
-            _create_control_provider(
-                config, self.get_subscription_channels, self.get_wildcard_topic_handler
-            )
-            for config in control_configs
+            _create_control_provider(config, self) for config in control_configs
         ]
 
         # flag which indicates if we SHOULD be connected.
@@ -142,28 +136,46 @@ class ControlPlaneManager:
                 provider.unsubscribe(channel)
         return True
 
-    def get_subscription_channels(self) -> dict[str, TopicHandler]:
-        """Get the subscription channels.
+    def get_non_wildcard_subscription_channels(self) -> dict[str, TopicHandler]:
+        """Get primary subscription channels.
 
-        These channels cannot be wildcards, and incoming topics must match the channel topics exactly. Note that this function gets accessed as a callback from the direct broker implementations.
+        These channels cannot be wildcards, and incoming topics must match the channel topics exactly.
+
+        This function is safe to call from the broker clients, as it does not mutate state.
 
         Returns:
           the dictionary of topics to topic information
         """
         return self._topics_to_handlers
 
-    def get_wildcard_topic_handler(self, topic: str) -> TopicHandler | None:
+    def get_wildcard_topic_and_topic_handler(self, topic: str) -> tuple[str, TopicHandler] | None:
         """Get the wildcard topic handler for a given topic, if it exists.
 
         This is an inefficient lookup, so should only be used if we fail to find a non-wildcard match for an incoming topic. Note that this function gets accessed as a callback from the direct broker implementations.
 
+        This function is safe to call from the broker clients, as it does not mutate state.
+
+        Params:
+          topic: the topic for an incoming message (this will not have any wildcards in it)
+
         Returns:
-          the topic handler associated with the topic, if it exists; None otherwise
+          if a match found: the wildcard string configured application-side to match the topic parameter, and the topic handler associated with the topic
+          if no match found: None
         """
-        for topic_handler in self._wildcards.values():
+        for wildcard, topic_handler in self._wildcards.items():
             if topic_handler.does_topic_match(topic):
-                return topic_handler
+                return wildcard, topic_handler
         return None
+
+    def get_all_subscription_channels(self) -> itertools.chain[tuple[str, TopicHandler]]:
+        """Get all subscription channels, including wildcard channels.
+
+        This function is safe to call from the broker clients, as it does not mutate state.
+
+        Returns:
+            an iterator which yields tuples of (channel, topic handler) for all channels, including wildcards. Note that wildcard channels will be returned in no particular order, and may be interspersed with non-wildcard channels.
+        """
+        return itertools.chain(self._topics_to_handlers.items(), self._wildcards.items())
 
     def connect(self) -> None:
         """Connect to all configured brokers.
