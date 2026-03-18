@@ -2,6 +2,14 @@
 
 We follow [Common Changelog](https://common-changelog.org/) formatting for this document.
 
+## [0.9.3] - 2026-03-18
+
+No API changes.
+
+### Fixed
+
+- Correct wildcard handling within ControlPlaneManager ([commit](https://github.com/INTERSECT-SDK/intersect-python-common/commit/c681856214d329874fa51f7c50b346a66825e5c5)) (Lance Drane)
+
 ## [0.9.2] - 2026-03-17
 
 No API changes.
