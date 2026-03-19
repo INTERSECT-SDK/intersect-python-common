@@ -35,7 +35,6 @@ _MQTT_MAX_RETRIES = 10
 # this will be a breaking change, so only add it when ready to break
 def _hierarchy_2_mqtt(hierarchy: str) -> str:
     """Take the hierarchy string format saved in the Service and map it to the MQTT topic format. Currently just covers wildcards."""
-    # return hierarchy.replace('#', '+')
     return hierarchy.replace('*', '+')
 
 
