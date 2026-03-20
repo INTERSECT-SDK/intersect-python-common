@@ -28,5 +28,5 @@ The INTERSECT-SDK MUST follow semantic versioning, and MUST update its semantic 
 ```bash
 uv venv .venv
 source .venv/bin/activate
-uv sync --locked --all-extras --all-groups
+uv sync --all-extras --all-groups
 ```

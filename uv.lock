@@ -365,16 +365,14 @@ dependencies = [
 ]
 
 [package.dev-dependencies]
-lint = [
+dev = [
     { name = "codespell" },
+    { name = "httpretty" },
     { name = "mypy" },
     { name = "pre-commit" },
-    { name = "ruff" },
-]
-test = [
-    { name = "httpretty" },
     { name = "pytest" },
     { name = "pytest-cov" },
+    { name = "ruff" },
 ]
 
 [package.metadata]
@@ -386,16 +384,14 @@ requires-dist = [
 ]
 
 [package.metadata.requires-dev]
-lint = [
+dev = [
     { name = "codespell", specifier = ">=2.3.0" },
+    { name = "httpretty", specifier = ">=1.1.4" },
     { name = "mypy", specifier = ">=1.10.0" },
     { name = "pre-commit", specifier = ">=3.3.1" },
-    { name = "ruff", specifier = "==0.12.7" },
-]
-test = [
-    { name = "httpretty", specifier = ">=1.1.4" },
     { name = "pytest", specifier = ">=7.3.2" },
     { name = "pytest-cov", specifier = ">=4.1.0" },
+    { name = "ruff", specifier = "==0.12.7" },
 ]
 
 [[package]]
