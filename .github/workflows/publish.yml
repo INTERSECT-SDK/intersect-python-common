@@ -25,9 +25,7 @@ jobs:
       - name: "Build package"
         run: uv build --no-create-gitignore
       - name: Publish package to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
-        with:
-          repository-url: https://upload.pypi.org/legacy/
+        run: uv publish
       - name: upload to github release
         uses: docker://antonyurchenko/git-release:v5
         env:
