@@ -2,6 +2,14 @@
 
 We follow [Common Changelog](https://common-changelog.org/) formatting for this document.
 
+## [0.9.4] - 2026-03-31
+
+No API changes.
+
+### Fixed
+
+- Correct internal `subscribe()` API ([commit](https://github.com/INTERSECT-SDK/intersect-python-common/commit/1c6b726fb4f8b0167402ed6563294d114835c431)) (Lance Drane)
+
 ## [0.9.3] - 2026-03-18
 
 No API changes.
@@ -27,6 +35,7 @@ Initial reorganization of SDK packaging.
 - Added new argument to `ControlPlaneManager.add_subscription_channel()` which specifies a queue name to use.
 - Add `is_root` option to `ControlPlaneConfig` in preparation for Registry Service.
 
+[0.9.4]: https://github.com/INTERSECT-SDK/intersect-python-common/releases/tag/0.9.4
 [0.9.3]: https://github.com/INTERSECT-SDK/intersect-python-common/releases/tag/0.9.3
 [0.9.2]: https://github.com/INTERSECT-SDK/intersect-python-common/releases/tag/0.9.2
 [0.9.1]: https://github.com/INTERSECT-SDK/intersect-python-common/releases/tag/0.9.1
