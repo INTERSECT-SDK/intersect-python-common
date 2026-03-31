@@ -165,12 +165,13 @@ class MQTTClient(BrokerClient):
             resolved_topic, payload, qos=self._max_supported_qos if persist else 0, properties=props
         )
 
-    def subscribe(self, topic: str, persist: bool) -> None:
+    def subscribe(self, topic: str, persist: bool, queue_name: str) -> None:  # noqa: ARG002
         """Subscribe to a topic over the pre-existing connection (via connect()).
 
         Args:
             topic: Topic to subscribe to.
             persist: Determine if the associated message queue of the topic is long-lived (True) or not (False)
+            queue_name: The name of the queue to subscribe to. Ignored with current MQTT implementation.
         """
         resolved_topic = _hierarchy_2_mqtt(topic)
         # NOTE: RabbitMQ only works with QOS of 1 and 0, and seems to convert QOS2 to QOS1
@@ -301,7 +302,7 @@ class MQTTClient(BrokerClient):
 
             self._connected_flag.set()
             for topic, topic_handler in self._control_plane_manager.get_all_subscription_channels():
-                self.subscribe(topic, topic_handler.topic_persist)
+                self.subscribe(topic, topic_handler.topic_persist, topic_handler.queue_name)
         else:
             # This will generally suggest a misconfiguration
             self._connected = False

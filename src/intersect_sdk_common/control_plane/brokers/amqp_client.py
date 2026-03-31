@@ -223,17 +223,22 @@ class AMQPClient(BrokerClient):
         else:
             logger.error('Unable to publish message %s on topic %s', payload, topic)
 
-    def subscribe(self, topic: str, persist: bool) -> None:
+    def subscribe(self, topic: str, persist: bool, queue_name: str) -> None:
         """Subscribe to a topic.
 
         topic: system-of-system hierarchy. In AMQP parlance this gets translated to the routing key.
         persist: If True, we will create an idempotent queue name which should persist
           even on broker or application shutdown. If False, we will allow the server to create a unique
           queue name, and the queue will be destroyed once the associated channel is closed.
+        queue_name: The name of the queue to subscribe to.
         """
         topic = _hierarchy_2_amqp(topic)
         cb = functools.partial(
-            self._create_queue, channel=self._channel_in, topic=topic, persist=persist
+            self._create_queue,
+            channel=self._channel_in,
+            topic=topic,
+            persist=persist,
+            queue_name=queue_name,
         )
         self._connection.ioloop.add_callback_threadsafe(cb)
 

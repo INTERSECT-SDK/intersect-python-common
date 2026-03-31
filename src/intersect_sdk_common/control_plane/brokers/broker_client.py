@@ -55,7 +55,7 @@ class BrokerClient(Protocol):
         """
         ...
 
-    def subscribe(self, topic: str, persist: bool) -> None:
+    def subscribe(self, topic: str, persist: bool, queue_name: str) -> None:
         """Subscribe to a topic over the pre-existing connection (via connect()).
 
         This function should ALSO be called by reconnect handlers, and not just directly.
@@ -64,6 +64,7 @@ class BrokerClient(Protocol):
         Args:
             topic: Topic to subscribe to.
             persist: Whether or not the queue subscribed to is intended to be long-lived.
+            queue_name: The name of the queue to subscribe to. Used or ignored depending on the protocol.
         """
         ...
 

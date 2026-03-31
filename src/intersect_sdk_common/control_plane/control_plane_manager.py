@@ -115,7 +115,7 @@ class ControlPlaneManager:
             topic_handler.queue_name = queue_name
         if self.is_connected():
             for provider in self._control_providers:
-                provider.subscribe(channel, persist)
+                provider.subscribe(channel, persist, queue_name)
 
     def remove_subscription_channel(self, channel: str) -> bool:
         """Stop subscribing to a channel on all configured brokers.
