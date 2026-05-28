@@ -10,14 +10,17 @@ from .brokers.broker_client import BrokerClient
 from .definitions import MessageCallback
 from .topic_handler import TopicHandler
 
-_CHANNEL_REGEX = re.compile(r'^[a-zA-Z0-9*/-]+[a-zA-Z0-9*#/-]$')
+_CHANNEL_REGEX = re.compile(r'^[a-zA-Z0-9_*/-]+[a-zA-Z0-9_*#/-]$')
 """Allow for these patterns:
 
 - alphanumeric characters
 - hyphens
+- underscores
 - `/` (topic separator; note that this is '.' on the broker)
 - `*` (wildcard for exactly one word)
 - `#` (wildcard for any number of words, but can ONLY appear at the end of the topic string, see section 4.7.1.2 at https://docs.oasis-open.org/mqtt/mqtt/v3.1.1/os/mqtt-v3.1.1-os.html#_Toc398718107)
+
+This should be permissive relative to other patterns. You must cover system/service/hierarchy regexes, capability regexes, and event name regexes.
 """
 
 
@@ -75,7 +78,11 @@ class ControlPlaneManager:
         self._wildcards: dict[str, TopicHandler] = {}
 
     def add_subscription_channel(
-        self, channel: str, callbacks: set[MessageCallback], persist: bool, queue_name: str
+        self,
+        channel: str,
+        callbacks: set[MessageCallback],
+        persist: bool,
+        queue_name: str,
     ) -> None:
         """Start listening for messages on a channel on all configured brokers.
 
@@ -167,7 +174,9 @@ class ControlPlaneManager:
                 return wildcard, topic_handler
         return None
 
-    def get_all_subscription_channels(self) -> itertools.chain[tuple[str, TopicHandler]]:
+    def get_all_subscription_channels(
+        self,
+    ) -> itertools.chain[tuple[str, TopicHandler]]:
         """Get all subscription channels, including wildcard channels.
 
         This function is safe to call from the broker clients, as it does not mutate state.
