@@ -45,7 +45,7 @@ jobs:
           - windows-latest
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Setup UV
         uses: astral-sh/setup-uv@v7
         with:
@@ -85,7 +85,7 @@ jobs:
           - "9000:9000" # main MINIO API port
           - "9001:9001" # web UI
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Setup UV
         uses: astral-sh/setup-uv@v7
         with:
