@@ -2,6 +2,14 @@
 
 We follow [Common Changelog](https://common-changelog.org/) formatting for this document.
 
+## [0.9.5] - 2026-05-28
+
+No API changes.
+
+### Fixed
+
+- Correct topic handling for broker protocols ([commit](https://github.com/INTERSECT-SDK/intersect-python-common/commit/8672cd81ca266d43a470aa3e366c634a607488b4)) (Lance Drane)
+
 ## [0.9.4] - 2026-03-31
 
 No API changes.
@@ -35,6 +43,7 @@ Initial reorganization of SDK packaging.
 - Added new argument to `ControlPlaneManager.add_subscription_channel()` which specifies a queue name to use.
 - Add `is_root` option to `ControlPlaneConfig` in preparation for Registry Service.
 
+[0.9.5]: https://github.com/INTERSECT-SDK/intersect-python-common/releases/tag/0.9.5
 [0.9.4]: https://github.com/INTERSECT-SDK/intersect-python-common/releases/tag/0.9.4
 [0.9.3]: https://github.com/INTERSECT-SDK/intersect-python-common/releases/tag/0.9.3
 [0.9.2]: https://github.com/INTERSECT-SDK/intersect-python-common/releases/tag/0.9.2
