@@ -21,8 +21,17 @@ if TYPE_CHECKING:
     from .control_plane.definitions import MessageCallback
     from .core_definitions import IntersectDataHandler, IntersectMimeType
     from .data_plane.data_plane_manager import DataPlaneManager
-    from .exceptions import IntersectApplicationError, IntersectError, IntersectSetupError
-    from .version import __version__, intersect_sdk_version_info, intersect_sdk_version_string
+    from .exceptions import (
+        IntersectApplicationError,
+        IntersectError,
+        IntersectSetupError,
+    )
+    from .utils.version_resolver import resolve_user_version
+    from .version import (
+        __version__,
+        intersect_sdk_version_info,
+        intersect_sdk_version_string,
+    )
 
 __all__ = (
     'ControlPlaneConfig',
@@ -41,6 +50,7 @@ __all__ = (
     '__version__',
     'intersect_sdk_version_info',
     'intersect_sdk_version_string',
+    'resolve_user_version',
 )
 
 # PEP 562 stuff: do lazy imports for people who just want to import from the top-level module
@@ -62,6 +72,7 @@ __lazy_imports = {
     '__version__': '.version',
     'intersect_sdk_version_info': '.version',
     'intersect_sdk_version_string': '.version',
+    'resolve_user_version': '.utils.version_resolver',
 }
 
 
