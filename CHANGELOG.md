@@ -2,6 +2,12 @@
 
 We follow [Common Changelog](https://common-changelog.org/) formatting for this document.
 
+## [0.9.6] - 2026-06-02
+
+### Added
+
+- add `resolve_user_version` function from SDK as a public API ([commit](https://github.com/INTERSECT-SDK/intersect-python-common/commit/9a9f98fdad7ec38b31d2c28ddf0d657c049ec648)) (Lance Drane)
+
 ## [0.9.5] - 2026-05-28
 
 No API changes.
@@ -43,6 +49,7 @@ Initial reorganization of SDK packaging.
 - Added new argument to `ControlPlaneManager.add_subscription_channel()` which specifies a queue name to use.
 - Add `is_root` option to `ControlPlaneConfig` in preparation for Registry Service.
 
+[0.9.6]: https://github.com/INTERSECT-SDK/intersect-python-common/releases/tag/0.9.6
 [0.9.5]: https://github.com/INTERSECT-SDK/intersect-python-common/releases/tag/0.9.5
 [0.9.4]: https://github.com/INTERSECT-SDK/intersect-python-common/releases/tag/0.9.4
 [0.9.3]: https://github.com/INTERSECT-SDK/intersect-python-common/releases/tag/0.9.3
