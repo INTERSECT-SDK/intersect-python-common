@@ -33,6 +33,12 @@ dependencies = [
   "minio>=7.2.3",
 ]
 
+[project.urls]
+Homepage = "https://github.com/INTERSECT-SDK/intersect-python-common"
+Changelog = "https://github.com/INTERSECT-SDK/intersect-python-common/blob/main/CHANGELOG.md"
+Documentation = "https://intersect-python-sdk.readthedocs.io/en/latest"
+Issues = "https://github.com/INTERSECT-SDK/intersect-python-common/issues"
+
 [dependency-groups]
 dev = [
   "pre-commit>=3.3.1",
