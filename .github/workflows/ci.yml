@@ -39,7 +39,7 @@ jobs:
     name: Unit tests for Windows, MacOS
     strategy:
       matrix:
-        python-version: ["3.10", "3.11", "3.12", "3.13"]
+        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
         os:
           - macos-latest
           - windows-latest
@@ -60,7 +60,7 @@ jobs:
     name: Full test suite with RabbitMQ and MinIO on Linux
     strategy:
       matrix:
-        python-version: ["3.10", "3.11", "3.12", "3.13"]
+        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
     runs-on: ubuntu-latest
     services:
       rabbitmq:
