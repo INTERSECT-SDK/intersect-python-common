@@ -4,44 +4,10 @@ from pydantic import TypeAdapter, ValidationError
 from intersect_sdk_common.config import (
     ControlPlaneConfig,
     DataStoreConfig,
-    HierarchyConfig,
+    IntersectConfig,
 )
 
 # TESTS #####################
-
-
-def test_empty_hierarchy():
-    with pytest.raises(ValidationError) as ex:
-        HierarchyConfig()  # type: ignore[call-arg]
-    errors = ex.value.errors()
-    assert len(errors) == 4
-    assert all(e['type'] == 'missing' for e in errors)
-    locations = [e['loc'] for e in errors]
-    assert ('organization',) in locations
-    assert ('facility',) in locations
-    assert ('system',) in locations
-    assert ('service',) in locations
-
-
-def test_invalid_hierarchy():
-    with pytest.raises(ValidationError) as ex:
-        HierarchyConfig(
-            organization='no.periods',
-            facility='no_underscores',
-            system='',
-            subsystem='no/slashes',
-            service='a',
-        )
-    errors = ex.value.errors()
-    assert len(errors) == 5
-    assert all(e['type'] == 'string_pattern_mismatch' for e in errors)
-    locations = [e['loc'] for e in errors]
-    assert ('organization',) in locations
-    assert ('facility',) in locations
-    assert ('system',) in locations
-    assert ('subsystem',) in locations
-    assert ('service',) in locations
-
 
 # NOTE: with dataclasses, need to validate dictionaries instead of the dataclass directly
 
@@ -101,3 +67,29 @@ def test_invalid_data_plane_config():
     assert {'type': 'string_too_short', 'loc': ('password',)} in errors
     assert {'type': 'string_too_short', 'loc': ('host',)} in errors
     assert {'type': 'greater_than', 'loc': ('port',)} in errors
+
+
+def test_missing_intersect_config():
+    with pytest.raises(ValidationError) as ex:
+        TypeAdapter(IntersectConfig).validate_python({})
+    errors = [{'type': e['type'], 'loc': e['loc']} for e in ex.value.errors()]
+    assert len(errors) == 3
+    assert {'type': 'missing', 'loc': ('brokers',)} in errors
+    assert {'type': 'missing', 'loc': ('system_name',)} in errors
+    assert {'type': 'missing', 'loc': ('service_name',)} in errors
+
+
+def test_invalid_intersect_config():
+    with pytest.raises(ValidationError) as ex:
+        TypeAdapter(IntersectConfig).validate_python(
+            IntersectConfig(
+                system_name='I AM INVALID',
+                service_name=7,
+                brokers=[],
+            ).__dict__
+        )
+    errors = [{'type': e['type'], 'loc': e['loc']} for e in ex.value.errors()]
+    assert len(errors) == 3
+    assert {'type': 'string_pattern_mismatch', 'loc': ('system_name',)} in errors
+    assert {'type': 'string_type', 'loc': ('service_name',)} in errors
+    assert {'type': 'too_short', 'loc': ('brokers',)} in errors

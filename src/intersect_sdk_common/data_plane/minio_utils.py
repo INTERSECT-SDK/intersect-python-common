@@ -11,7 +11,7 @@ from typing_extensions import TypedDict
 from urllib3.exceptions import MaxRetryError
 from urllib3.util import parse_url
 
-from ..config import DataStoreConfig, HierarchyConfig
+from ..config import DataStoreConfig
 from ..core_definitions import IntersectMimeType
 from ..exceptions import IntersectError
 from ..logger import logger
@@ -34,19 +34,20 @@ class MinioPayload(TypedDict):
     """
 
 
-def _condense_minio_bucket_name(hierarchy: HierarchyConfig) -> str:
+def _condense_minio_bucket_name(system: str, service: str) -> str:
     """Condense a hierarchy string into a string less than 64 characters.
 
     This function is needed to handle MINIO bucket names. Collisions should be extremely rare,
     and it should be fairly straightforward to identify a specific bucket for MINIO admins.
 
-    Bucket name = first characters (up to 6) of service name + hyphen + sha224 of full hierarchy string
+    Bucket name = first characters (up to 6) of service name + hyphen + sha224 of system-service combo string
 
     TODO in the future, MINIO calls should be system-level only, so only the system + facility + organization
     should need to be hashed.
     Also, potentially come up with a better hashing algorithm (though sha224 is compressed enough, and gives us 56 characters).
     """
-    return f'{hierarchy.service[:6]}-{sha224(hierarchy.hierarchy_string().encode()).hexdigest()}'
+    encoded = f'{system}-{service}'.encode()
+    return f'{service[:6]}-{sha224(encoded).hexdigest()}'
 
 
 def create_minio_store(config: DataStoreConfig) -> Minio:
@@ -89,7 +90,7 @@ def create_minio_store(config: DataStoreConfig) -> Minio:
 
 
 def send_minio_object(
-    data: bytes, provider: Minio, content_type: IntersectMimeType, hierarchy: HierarchyConfig
+    data: bytes, provider: Minio, content_type: IntersectMimeType, system: str, service: str
 ) -> MinioPayload:
     """Core function to save data in MINIO.
 
@@ -97,14 +98,15 @@ def send_minio_object(
       data: user response data, as bytes
       provider: the Minio client
       content_type: the content type of the body
-      hierarchy: the hierarchy configuration
+      system: the system name
+      service: the service name
     Returns:
       The MINIO payload which gets sent in the actual message.
 
     Raises:
       IntersectException - if any non-fatal MinIO error is caught
     """
-    bucket_name = _condense_minio_bucket_name(hierarchy)
+    bucket_name = _condense_minio_bucket_name(system, service)
     # mimetypes.guess_extension() is a nice-to-have for MINIO preview, but isn't essential.
     object_id = str(uuid4()) + (mimetypes.guess_extension(content_type) or '')
     try:
