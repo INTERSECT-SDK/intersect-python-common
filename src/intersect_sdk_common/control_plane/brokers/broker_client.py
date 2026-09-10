@@ -7,6 +7,15 @@ from typing import Protocol
 
 from ...config import ControlPlaneConfig
 
+GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS = 30.0
+"""Maximum amount of time (in seconds) a broker client will wait, upon receiving a disconnect
+request (i.e. from an OS signal such as SIGTERM), for the in-flight message it is currently
+handling to finish (so that a reply/publish can still go out). After this window elapses,
+the client gives up waiting and proceeds with shutdown regardless of whether the in-flight
+message finished. Broker clients should NOT attempt to consume/pull any additional messages
+once a disconnect has been requested, only finish the one already in progress.
+"""
+
 
 class BrokerClient(Protocol):
     """Abstract definition of a Broker Client.

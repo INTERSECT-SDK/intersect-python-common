@@ -20,7 +20,7 @@ import pika.frame
 
 from ...logger import logger
 from ...utils.multi_flag_thread_event import MultiFlagThreadEvent
-from .broker_client import BrokerClient
+from .broker_client import GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS, BrokerClient
 
 if TYPE_CHECKING:
     from pika.channel import Channel
@@ -166,8 +166,12 @@ class AMQPClient(BrokerClient):
         self._connection.close()
 
         if self._thread:
-            # If gracefully shutting down, we should finish up the current job.
-            self._thread.join(5 if self.considered_unrecoverable() else None)
+            # If gracefully shutting down, give the in-flight message being handled (if any) a
+            # bounded amount of time to finish/publish before we give up on it; if the broker is
+            # unrecoverable there's no point waiting at all.
+            self._thread.join(
+                0 if self.considered_unrecoverable() else GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS
+            )
             self._thread = None
 
     def is_connected(self) -> bool:
@@ -284,8 +288,9 @@ class AMQPClient(BrokerClient):
         logger.info('Unsubscribed from %s', topic)
         try:
             thread = self._consumer_tags_to_threads[consumer_tag]
-            # kill thread immediately if not recoverable, wait to send last message if we are shutting down gracefully
-            thread.join(0 if self.considered_unrecoverable() else None)
+            # kill thread immediately if not recoverable, otherwise give it a bounded amount of
+            # time to finish handling/publishing its current message before we give up on it
+            thread.join(0 if self.considered_unrecoverable() else GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS)
             del self._consumer_tags_to_threads[consumer_tag]
             logger.debug('Consumer cancelled')
         except KeyError:
@@ -334,6 +339,10 @@ class AMQPClient(BrokerClient):
 
         This function usually implies a misconfiguration in the application config.
         """
+        if self._should_disconnect:
+            logger.info('Disconnect requested, giving up AMQP reconnection attempt')
+            connection.ioloop.stop()
+            return
         self._connection_retries += 1
         logger.error(
             f'On connect error received (probable broker config error), have tried {self._connection_retries} times'
@@ -640,6 +649,9 @@ class AMQPClient(BrokerClient):
                     basic_deliver.delivery_tag,
                     persist,
                 ),
+                # daemon so that a message which is still being handled past GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS
+                # cannot block the application from exiting once we've given up waiting on it
+                daemon=True,
             )
             self._consumer_tags_to_threads[consumer_tag_info.consumer_tag] = thrd
             thrd.start()

@@ -19,7 +19,7 @@ from paho.mqtt.packettypes import PacketTypes
 from paho.mqtt.properties import Properties
 
 from ...logger import logger
-from .broker_client import BrokerClient
+from .broker_client import GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS, BrokerClient
 
 if TYPE_CHECKING:
     from paho.mqtt.client import DisconnectFlags
@@ -123,7 +123,13 @@ class MQTTClient(BrokerClient):
         self._should_disconnect = True
         if self._connection:
             self._connection.disconnect()
-            self._connection.loop_stop()
+            # loop_stop() blocks until the network thread exits, with no timeout of its own; if a
+            # message handler is slow to finish publishing its reply, run the wait on a separate
+            # (daemon) thread and only wait up to GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS for it here, so
+            # a stuck/slow handler cannot block shutdown forever.
+            stopper = threading.Thread(target=self._connection.loop_stop, daemon=True)
+            stopper.start()
+            stopper.join(GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS)
 
     def is_connected(self) -> bool:
         """Check if there is an active connection to the broker.
