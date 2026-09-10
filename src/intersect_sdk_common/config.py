@@ -70,8 +70,7 @@ class ControlPlaneConfig:
     NOTE: INTERSECT currently only supports AMQP and MQTT.
     """
 
-    # TODO default this to False once the registry service is in place
-    is_root: bool = True
+    is_root: bool = False
     """
     Whether or not the broker credentials are for connecting as a root user.
 
@@ -141,7 +140,7 @@ class IntersectConfig(BaseModel):
     """The highest level of namespacing on the broker address, provided by value configured by registry service administrator. Important for connecting different INTERSECT systems."""
     service_name: str
     """The service namespacing of these credentials, reserved by user on registry service."""
-    brokers: Annotated[list[ControlPlaneConfig], Field(min_length=1)]
-    """List of control plane configurations the SDK should use."""
+    broker: ControlPlaneConfig
+    """Control plane configuration the SDK should use with this Service."""
     data_stores: Annotated[DataStoreConfigMap, Field(default_factory=lambda: DataStoreConfigMap())]
     """List of data plane configurations the SDK should use."""

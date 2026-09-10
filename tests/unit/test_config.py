@@ -74,7 +74,7 @@ def test_missing_intersect_config():
         TypeAdapter(IntersectConfig).validate_python({})
     errors = [{'type': e['type'], 'loc': e['loc']} for e in ex.value.errors()]
     assert len(errors) == 3
-    assert {'type': 'missing', 'loc': ('brokers',)} in errors
+    assert {'type': 'missing', 'loc': ('broker',)} in errors
     assert {'type': 'missing', 'loc': ('system_name',)} in errors
     assert {'type': 'missing', 'loc': ('service_name',)} in errors
 
@@ -85,11 +85,10 @@ def test_invalid_intersect_config():
             IntersectConfig(
                 system_name='I AM INVALID',
                 service_name=7,
-                brokers=[],
             ).__dict__
         )
     errors = [{'type': e['type'], 'loc': e['loc']} for e in ex.value.errors()]
     assert len(errors) == 3
     assert {'type': 'string_pattern_mismatch', 'loc': ('system_name',)} in errors
     assert {'type': 'string_type', 'loc': ('service_name',)} in errors
-    assert {'type': 'too_short', 'loc': ('brokers',)} in errors
+    assert {'type': 'missing', 'loc': ('broker',)} in errors

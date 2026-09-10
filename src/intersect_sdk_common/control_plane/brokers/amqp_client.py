@@ -1,7 +1,7 @@
 """This module handles ALL AMQP protocol logic in INTERSECT. We seek to entirely abstract protocols away from users.
 
 This is a very specific pub-sub model which assumes a single topic exchange.
-AMQP topics in INTERSECT generally look like ${ORGANIZATION}.${FACILITY}.${SYSTEM}.${SUBSYSTEM}.${SERVICE}.${MESSAGE_TYPE} . (TODO change to ${SYSTEM}.${SERVICE}.${MESSAGE_TYPE})
+AMQP topics in INTERSECT generally look like ${SYSTEM}.${SERVICE}.${MESSAGE_TYPE} , with additional extensions after ${MESSAGE_TYPE} optional.
 MESSAGE_TYPE refers to INTERSECT domain messages - we do not allow users to determine their own message types directly, and every message has a message type.
 SERVICE refers to a specific application, generally the microservice which is handling the message.
 SYSTEM is generally the level where Auth should occur, and where you should configure access control on the broker itself.
