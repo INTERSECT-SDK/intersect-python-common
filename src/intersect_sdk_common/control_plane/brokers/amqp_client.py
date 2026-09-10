@@ -27,6 +27,7 @@ if TYPE_CHECKING:
     from pika.frame import Frame
     from pika.spec import Basic, BasicProperties
 
+    from ...config import ControlPlaneConfig
     from ..control_plane_manager import ControlPlaneManager
     from ..definitions import MessageCallback
 
@@ -89,36 +90,16 @@ class AMQPClient(BrokerClient):
 
     def __init__(
         self,
-        host: str,
-        port: int,
-        username: str,
-        password: str,
+        control_plane_config: ControlPlaneConfig,
         control_plane_manager: ControlPlaneManager,
-        is_root: bool,
     ) -> None:
         """The default constructor.
 
         Args:
-            host: String for hostname of AMQP broker
-            port: port number of AMQP broker
-            username: username credentials for AMQP broker
-            password: password credentials for AMQP broker
+            control_plane_config: configuration for the AMQP broker connection
             control_plane_manager: reference to the ControlPlaneManager instance, remember to ONLY use functions which do not mutate state
-            is_root: Whether or not the client can configure exchanges and queues themselves (core services), or if this must be delegated to a Core Service (SDK Clients/Services)
         """
-        self._connection_params = pika.ConnectionParameters(
-            host=host,
-            port=port,
-            virtual_host='/',
-            credentials=pika.PlainCredentials(username, password),
-            connection_attempts=3,
-            # if not specified, this value is obtained by the broker. RabbitMQ sets it to 60s by default
-            heartbeat=10,
-            blocked_connection_timeout=5.0,
-            retry_delay=0.5,
-        )
-
-        self._is_root = is_root
+        self._handle_config(control_plane_config)
 
         # The pika connection to the broker
         self._connection: pika.adapters.SelectConnection = None
@@ -140,6 +121,24 @@ class AMQPClient(BrokerClient):
         self._unrecoverable = False
         # tracking both channels is the best way to handle continuations
         self._channel_flags = MultiFlagThreadEvent(2)
+
+    def _handle_config(self, control_plane_config: ControlPlaneConfig) -> None:
+        self._connection_params = pika.ConnectionParameters(
+            host=control_plane_config.host,
+            port=control_plane_config.port or 5672,
+            virtual_host='/',
+            credentials=pika.PlainCredentials(
+                control_plane_config.username, control_plane_config.password
+            ),
+            connection_attempts=3,
+            # if not specified, this value is obtained by the broker. RabbitMQ sets it to 60s by default
+            heartbeat=10,
+            blocked_connection_timeout=5.0,
+            retry_delay=0.5,
+        )
+
+        self._is_root = control_plane_config.is_root
+        self._system_name = control_plane_config.system_name
 
     def connect(self) -> None:
         """Connect to the defined broker.
@@ -252,6 +251,14 @@ class AMQPClient(BrokerClient):
         consumer_tag_info = self._topics_to_consumer_tags.get(amqp_topic, None)
         if consumer_tag_info:
             self._cancel_consumer_tag(amqp_topic, consumer_tag_info.consumer_tag)
+
+    def system_name(self) -> str:
+        """Return the ecosystem system name."""
+        return self._system_name
+
+    def refresh_config(self, config: ControlPlaneConfig) -> None:
+        """Refresh the config with the new one from the registry service."""
+        self._handle_config(config)
 
     def _cancel_consumer_tag(self, topic: str, consumer_tag: str) -> None:
         if self._channel_in and self._channel_in.is_open:

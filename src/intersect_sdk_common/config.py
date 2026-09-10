@@ -37,6 +37,9 @@ class ControlPlaneConfig:
     """
     # TODO - support more protocols and protocol versions as needed - see https://www.asyncapi.com/docs/reference/specification/v2.6.0#serverObject
 
+    system_name: Annotated[str, Field(pattern=HIERARCHY_REGEX)]
+    """The highest level of namespacing on the broker address, provided by value configured by registry service administrator. Important for connecting different INTERSECT systems."""
+
     username: Annotated[str, Field(min_length=1)]
     """
     Username credentials for broker connection.
@@ -136,10 +139,8 @@ class IntersectConfig(BaseModel):
     This object should only be used by the SDK, and not users directly.
     """
 
-    system_name: Annotated[str, Field(pattern=HIERARCHY_REGEX)]
-    """The highest level of namespacing on the broker address, provided by value configured by registry service administrator. Important for connecting different INTERSECT systems."""
     service_name: str
-    """The service namespacing of these credentials, reserved by user on registry service."""
+    """The service namespacing of this microservice, reserved by user (or, if client, obtained from credential) on registry service."""
     broker: ControlPlaneConfig
     """Control plane configuration the SDK should use with this Service."""
     data_stores: Annotated[DataStoreConfigMap, Field(default_factory=lambda: DataStoreConfigMap())]

@@ -5,6 +5,8 @@ This interface assumes a pub/sub model, but otherwise is agnostic to protocol. T
 
 from typing import Protocol
 
+from ...config import ControlPlaneConfig
+
 
 class BrokerClient(Protocol):
     """Abstract definition of a Broker Client.
@@ -79,4 +81,12 @@ class BrokerClient(Protocol):
         Args:
             topic: Topic to unsubscribe from.
         """
+        ...
+
+    def system_name(self) -> str:
+        """Returns the system name."""
+        ...
+
+    def refresh_config(self, config: ControlPlaneConfig) -> None:
+        """If the configuration needs to be updated, update it."""
         ...

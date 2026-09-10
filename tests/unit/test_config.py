@@ -16,10 +16,11 @@ def test_missing_control_plane_config():
     with pytest.raises(ValidationError) as ex:
         TypeAdapter(ControlPlaneConfig).validate_python({})
     errors = [{'type': e['type'], 'loc': e['loc']} for e in ex.value.errors()]
-    assert len(errors) == 3
+    assert len(errors) == 4
     assert {'type': 'missing', 'loc': ('username',)} in errors
     assert {'type': 'missing', 'loc': ('password',)} in errors
     assert {'type': 'missing', 'loc': ('protocol',)} in errors
+    assert {'type': 'missing', 'loc': ('system_name',)} in errors
 
 
 def test_invalid_control_plane_config():
@@ -31,10 +32,12 @@ def test_invalid_control_plane_config():
                 password='',
                 port=0,
                 protocol='mqtt',  # type: ignore[arg-type]
+                system_name='',
             ).__dict__
         )
     errors = [{'type': e['type'], 'loc': e['loc']} for e in ex.value.errors()]
-    assert len(errors) == 5
+    assert len(errors) == 6
+    assert {'type': 'string_pattern_mismatch', 'loc': ('system_name',)} in errors
     assert {'type': 'string_too_short', 'loc': ('username',)} in errors
     assert {'type': 'string_too_short', 'loc': ('password',)} in errors
     assert {'type': 'string_too_short', 'loc': ('host',)} in errors
@@ -73,9 +76,8 @@ def test_missing_intersect_config():
     with pytest.raises(ValidationError) as ex:
         TypeAdapter(IntersectConfig).validate_python({})
     errors = [{'type': e['type'], 'loc': e['loc']} for e in ex.value.errors()]
-    assert len(errors) == 3
+    assert len(errors) == 2
     assert {'type': 'missing', 'loc': ('broker',)} in errors
-    assert {'type': 'missing', 'loc': ('system_name',)} in errors
     assert {'type': 'missing', 'loc': ('service_name',)} in errors
 
 
@@ -83,12 +85,10 @@ def test_invalid_intersect_config():
     with pytest.raises(ValidationError) as ex:
         TypeAdapter(IntersectConfig).validate_python(
             IntersectConfig(
-                system_name='I AM INVALID',
                 service_name=7,
             ).__dict__
         )
     errors = [{'type': e['type'], 'loc': e['loc']} for e in ex.value.errors()]
-    assert len(errors) == 3
-    assert {'type': 'string_pattern_mismatch', 'loc': ('system_name',)} in errors
+    assert len(errors) == 2
     assert {'type': 'string_type', 'loc': ('service_name',)} in errors
     assert {'type': 'missing', 'loc': ('broker',)} in errors
