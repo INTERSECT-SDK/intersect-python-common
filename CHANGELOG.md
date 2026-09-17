@@ -2,6 +2,24 @@
 
 We follow [Common Changelog](https://common-changelog.org/) formatting for this document.
 
+## Unreleased
+
+### Changed
+
+- Replaced `has_error` field in `UserspaceMessage` with `message_state`. Instead of a boolean, this is an enumerated value. This enumerated value can capture ongoing processing in addition to error notifications. ([commit](https://github.com/INTERSECT-SDK/intersect-python-common/commit/8c144b2186228cbcef44edf256a3a81bd101d9f1) (Lance Drane))
+
+### Added
+
+- Added `IntersectConfig` as representative of the configuration retrieved from the Registry Service at runtime ([commit 1](https://github.com/INTERSECT-SDK/intersect-python-common/commit/d4167449cca8fa05838379bc875c55876552d229) [commit 2](https://github.com/INTERSECT-SDK/intersect-python-common/commit/6e8053ee9555793b84bb2f4e0558c5a7df0ca0e1) (Lance Drane))
+
+### Removed
+
+- HierarchyConfig has been removed entirely. We no longer use organization, facility, or subsystem anywhere across the ecosystem. `System` is preserved as a top-level namespace to be configured by the ecosystem, and `Service` is the namespace the user/client specifies. ([commit](https://github.com/INTERSECT-SDK/intersect-python-common/commit/d4167449cca8fa05838379bc875c55876552d229) (Lance Drane))
+
+### Fixed
+
+- Force ControlPlaneManager `disconnect()` command to stop hanging ([commit](https://github.com/INTERSECT-SDK/intersect-python-common/commit/6686d744af9bc38686a0fb5baf53270cd0308080) (Lance Drane))
+
 ## [0.9.6] - 2026-06-02
 
 ### Added
