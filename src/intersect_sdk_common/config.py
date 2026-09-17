@@ -3,80 +3,28 @@
 from dataclasses import dataclass, field
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, PositiveInt
+from pydantic import BaseModel, Field, PositiveInt
 
 from .core_definitions import IntersectDataHandler
 
-HIERARCHY_REGEX = r'^[a-z]((?!--)[a-z0-9-]){2,62}$'
+HIERARCHY_REGEX = r'[a-z0-9][-a-z0-9]{2,62}'
 """
-The hierarchy regex needs to be fairly restricted due to the number of different
-systems we want to be compatible with. The rules:
+The hierarchy regex should accomplish the following:
 
 - Only allow unreserved characters (alphanumeric and .-~_): https://datatracker.ietf.org/doc/html/rfc3986#section-2.3
 - Require lowercase letters to avoid incompatibilities with case-insensitive systems.
-- MinIO has been found to forbid _ and ~ characters
-- MinIO requires an alphanumeric character at the start of the string
-- No adjacent non-alphanumeric characters allowed
 - Range should be from 3-63 characters
+- Be CLI friendly (don't start with hyphen) and URI friendly (don't use underscores)
 
-The following commit tracks several issues with MINIO: https://code.ornl.gov/intersect/additive-manufacturing/ros-intersect-adapter/-/commit/fa71b791be0ccf1a5884910b5be3b5239cf9896f
+This enables maximum integration with other systems (i.e. MINIO) without having to transform the hierarchy.
 """
+# HIERARCHY_REGEX = r'^[a-z0-9]((?!--)[a-z0-9-]){2,62}$'
+# If using this regex, you must configure the Pydantic ConfigDict regex_engine to be 'python-re' to support lookaheads
+# Used to disallow multiple hyphens
+# should work in HTML5 forms out of the gate
 
 ControlProvider = Literal['mqtt5.0', 'amqp0.9.1']
 """The type of broker we connect to."""
-
-
-class HierarchyConfig(BaseModel):
-    """Configuration for registering this service in a system-of-system architecture."""
-
-    service: Annotated[str, Field(pattern=HIERARCHY_REGEX)]
-    """
-    The name of this application - should be unique within an INTERSECT system
-    """
-
-    subsystem: str | None = Field(default=None, pattern=HIERARCHY_REGEX)
-    """
-    An associated subsystem / service-grouping of the system (should be unique within an INTERSECT system)
-    """
-
-    system: Annotated[str, Field(pattern=HIERARCHY_REGEX)]
-    """
-    Name of the "system", could also be thought of as a "device" (should be unique within a facility)
-    """
-
-    facility: Annotated[str, Field(pattern=HIERARCHY_REGEX)]
-    """
-    Name of the facility (an ORNL institutional designation, i.e. 'neutrons') (NOT abbreviated, should be unique within an organization)
-    """
-
-    organization: Annotated[str, Field(pattern=HIERARCHY_REGEX)]
-    """
-    Name of the organization (i.e. 'ornl') (NOT abbreviated) (should be unique in an INTERSECT cluster)
-    """
-
-    def hierarchy_string(self, join_str: str = '') -> str:
-        """Get the full hierarchy string. This is mostly used internally, but if you're developing a client, it could potentially be helpful.
-
-        Params
-          join_str: String used to separate different hierarchy parts in the full string (default: empty string).
-
-        Returns:
-          Single string, which will contain all system-of-system parts. For optional parts not configured (i.e. - no subsystem), they will be represented by a "-" character.
-        """
-        if not self.subsystem:
-            return join_str.join([self.organization, self.facility, self.system, '-', self.service])
-        return join_str.join(
-            [
-                self.organization,
-                self.facility,
-                self.system,
-                self.subsystem,
-                self.service,
-            ]
-        )
-
-    # we need to use the Python regex engine instead of the Rust regex engine here, because Rust's does not support lookaheads
-    model_config = ConfigDict(regex_engine='python-re')
 
 
 @dataclass
@@ -88,6 +36,9 @@ class ControlPlaneConfig:
     The protocol of the broker you'd like to use (i.e. AMQP, MQTT...)
     """
     # TODO - support more protocols and protocol versions as needed - see https://www.asyncapi.com/docs/reference/specification/v2.6.0#serverObject
+
+    system_name: Annotated[str, Field(pattern=HIERARCHY_REGEX)]
+    """The highest level of namespacing on the broker address, provided by value configured by registry service administrator. Important for connecting different INTERSECT systems."""
 
     username: Annotated[str, Field(min_length=1)]
     """
@@ -122,8 +73,7 @@ class ControlPlaneConfig:
     NOTE: INTERSECT currently only supports AMQP and MQTT.
     """
 
-    # TODO default this to False once the registry service is in place
-    is_root: bool = True
+    is_root: bool = False
     """
     Whether or not the broker credentials are for connecting as a root user.
 
@@ -181,3 +131,17 @@ class DataStoreConfigMap:
         if not self.minio:
             missing.add(IntersectDataHandler.MINIO)
         return missing
+
+
+class IntersectConfig(BaseModel):
+    """The response type used by INTERSECT-SDK Services and Clients to understand how to connect to the INTERSECT ecosystem.
+
+    This object should only be used by the SDK, and not users directly.
+    """
+
+    service_name: str
+    """The service namespacing of this microservice, reserved by user (or, if client, obtained from credential) on registry service."""
+    broker: ControlPlaneConfig
+    """Control plane configuration the SDK should use with this Service."""
+    data_stores: Annotated[DataStoreConfigMap, Field(default_factory=lambda: DataStoreConfigMap())]
+    """List of data plane configurations the SDK should use."""

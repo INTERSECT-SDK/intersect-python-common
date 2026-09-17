@@ -19,12 +19,13 @@ from paho.mqtt.packettypes import PacketTypes
 from paho.mqtt.properties import Properties
 
 from ...logger import logger
-from .broker_client import BrokerClient
+from .broker_client import GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS, BrokerClient
 
 if TYPE_CHECKING:
     from paho.mqtt.client import DisconnectFlags
     from paho.mqtt.reasoncodes import ReasonCode
 
+    from ...config import ControlPlaneConfig
     from ..control_plane_manager import ControlPlaneManager
 
 
@@ -55,27 +56,16 @@ class MQTTClient(BrokerClient):
 
     def __init__(
         self,
-        host: str,
-        port: int,
-        username: str,
-        password: str,
+        control_plane_config: ControlPlaneConfig,
         control_plane_manager: ControlPlaneManager,
-        uid: str | None = None,
     ) -> None:
         """The default constructor.
 
         Args:
-            host: String for hostname of MQTT broker
-            port: port number of MQTT broker
-            username: username credentials for MQTT broker
-            password: password credentials for MQTT broker
+            control_plane_config: configuration for the MQTT broker connection
             control_plane_manager: reference to the ControlPlaneManager instance, remember to ONLY use functions which do not mutate state
-            uid: A string representing the unique id to identify the client.
         """
-        # Unique id for the MQTT broker to associate this client with
-        self.uid = uid if uid else str(uuid.uuid4())
-        self.host = host
-        self.port = port
+        self.uid = str(uuid.uuid4())
 
         # Create a client to connect to RabbitMQ
         self._connection = paho_client.Client(
@@ -83,7 +73,8 @@ class MQTTClient(BrokerClient):
             protocol=paho_client.MQTTv5,
             client_id=self.uid,
         )
-        self._connection.username_pw_set(username=username, password=password)
+
+        self._handle_config(control_plane_config)
 
         # Whether the connection is currently active
         self._connected = False
@@ -103,6 +94,14 @@ class MQTTClient(BrokerClient):
         self._connection.on_connect = self._handle_connect
         self._connection.on_disconnect = self._handle_disconnect
         self._connection.on_message = self._on_message
+
+    def _handle_config(self, control_plane_config: ControlPlaneConfig) -> None:
+        self.host = control_plane_config.host
+        self.port = control_plane_config.port or 1883
+        self._connection.username_pw_set(
+            username=control_plane_config.username, password=control_plane_config.password
+        )
+        self._system_name = control_plane_config.system_name
 
     def connect(self) -> None:
         """Connect to the defined broker."""
@@ -124,7 +123,13 @@ class MQTTClient(BrokerClient):
         self._should_disconnect = True
         if self._connection:
             self._connection.disconnect()
-            self._connection.loop_stop()
+            # loop_stop() blocks until the network thread exits, with no timeout of its own; if a
+            # message handler is slow to finish publishing its reply, run the wait on a separate
+            # (daemon) thread and only wait up to GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS for it here, so
+            # a stuck/slow handler cannot block shutdown forever.
+            stopper = threading.Thread(target=self._connection.loop_stop, daemon=True)
+            stopper.start()
+            stopper.join(GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS)
 
     def is_connected(self) -> bool:
         """Check if there is an active connection to the broker.
@@ -185,6 +190,14 @@ class MQTTClient(BrokerClient):
         """
         resolved_topic = _hierarchy_2_mqtt(topic)
         self._connection.unsubscribe(resolved_topic)
+
+    def system_name(self) -> str:
+        """Get the ecosystem system name."""
+        return self._system_name
+
+    def refresh_config(self, config: ControlPlaneConfig) -> None:
+        """Refresh the config with the new one from the registry service."""
+        self._handle_config(config)
 
     def _on_message(
         self,
