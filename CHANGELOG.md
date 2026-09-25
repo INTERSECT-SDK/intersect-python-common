@@ -7,6 +7,7 @@ We follow [Common Changelog](https://common-changelog.org/) formatting for this 
 ### Changed
 
 - Replaced `has_error` field in `UserspaceMessage` with `message_state`. Instead of a boolean, this is an enumerated value. This enumerated value can capture ongoing processing in addition to error notifications. ([commit](https://github.com/INTERSECT-SDK/intersect-python-common/commit/8c144b2186228cbcef44edf256a3a81bd101d9f1) (Lance Drane))
+- Consistently use '/' character everywhere to indicate a separator character, only change this in the protocol layer as needed ([commit](https://github.com/INTERSECT-SDK/intersect-python-common/commit/038725cf18a6b22ba6f24ccebec389f78e25b49f) (Lance Drane))
 
 ### Added
 
