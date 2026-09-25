@@ -18,7 +18,7 @@ from services they explicitly messaged.
 
 import datetime
 import uuid
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import AwareDatetime, BaseModel, Field, field_serializer
 
@@ -27,6 +27,14 @@ from ...core_definitions import (
     IntersectDataHandler,
 )
 from ...version import intersect_sdk_version_string
+
+MessageState = Literal[
+    'ERROR',  # something threw an Exception and this Request/Response chain is OVER
+    'DATA_REQUEST_PROCESSING_STARTED',  # calling Data Plane to send the request body
+    'USER_FUNCTION_PROCESSING_STARTED',  # calling user function
+    'DATA_RESPONSE_PROCESSING_STARTED',  # calling Data Plane to send the response body
+    'COMPLETE',  # Response is done. ALWAYS the message state from a Request.
+]
 
 
 class UserspaceMessageHeaders(BaseModel):
@@ -118,17 +126,15 @@ class UserspaceMessageHeaders(BaseModel):
     usage, the payload would indicate the URI to where the data is stored on MinIO.
     """
 
-    has_error: Annotated[
-        bool,
+    message_state: Annotated[
+        MessageState,
         Field(
-            False,
-            description='If this value is True, the payload will contain the error message (a string)',
+            'COMPLETE',
+            description='If request message - always COMPLETE. If response message: Current state of the request as handled by the Service. COMPLETE = finished processing with success. ERROR = finished processing with error. Other responses indicate that processing is ongoing.',
         ),
     ]
     """
-    If this flag is set to True, the payload will contain the error message (always a string).
-
-    This should only be set to "True" on return messages sent by services - NEVER clients.
+    Primary control flow logic for Clients/Orchestrators in determining how to handle the message.
     """
 
     # make sure all non-string fields are serialized into strings, even in Python code
@@ -141,9 +147,9 @@ class UserspaceMessageHeaders(BaseModel):
     def _ser_datetime(self, dt: datetime.datetime) -> str:
         return dt.isoformat()
 
-    @field_serializer('has_error', mode='plain')
-    def _ser_boolean(self, boolean: bool) -> str:
-        return str(boolean).lower()
+    # @field_serializer('has_error', mode='plain')
+    # def _ser_boolean(self, boolean: bool) -> str:
+    #     return str(boolean).lower()
 
     @field_serializer('data_handler', mode='plain')
     def _ser_enum(self, enum: IntersectDataHandler) -> str:
@@ -157,7 +163,7 @@ def create_userspace_message_headers(
     data_handler: IntersectDataHandler,
     campaign_id: uuid.UUID,
     request_id: uuid.UUID,
-    has_error: bool = False,
+    message_state: MessageState = 'COMPLETE',
 ) -> dict[str, str]:
     """Generate raw headers and write them into a generic data structure which can be handled by any broker protocol."""
     return UserspaceMessageHeaders(
@@ -170,7 +176,7 @@ def create_userspace_message_headers(
         created_at=datetime.datetime.now(tz=datetime.timezone.utc),
         operation_id=operation_id,
         data_handler=data_handler,
-        has_error=has_error,
+        message_state=message_state,
     ).model_dump(by_alias=True)
 
 

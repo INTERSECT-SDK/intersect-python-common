@@ -15,7 +15,7 @@ if TYPE_CHECKING:
         ControlProvider,
         DataStoreConfig,
         DataStoreConfigMap,
-        HierarchyConfig,
+        IntersectConfig,
     )
     from .control_plane.control_plane_manager import ControlPlaneManager
     from .control_plane.definitions import MessageCallback
@@ -40,8 +40,8 @@ __all__ = (
     'DataPlaneManager',
     'DataStoreConfig',
     'DataStoreConfigMap',
-    'HierarchyConfig',
     'IntersectApplicationError',
+    'IntersectConfig',
     'IntersectDataHandler',
     'IntersectError',
     'IntersectMimeType',
@@ -60,7 +60,7 @@ __lazy_imports = {
     'ControlProvider': '.config',
     'DataStoreConfig': '.config',
     'DataStoreConfigMap': '.config',
-    'HierarchyConfig': '.config',
+    'IntersectConfig': '.config',
     'ControlPlaneManager': '.control_plane.control_plane_manager',
     'MessageCallback': '.control_plane.definitions',
     'IntersectDataHandler': '.core_definitions',

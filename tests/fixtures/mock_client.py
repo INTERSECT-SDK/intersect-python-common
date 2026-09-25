@@ -11,6 +11,7 @@ class MockClient:
     """A mock client for testing purposes."""
 
     def __init__(self, config: ControlPlaneConfig, client_sub_channel: str) -> None:
+        self.system_name = config.system_name
         self.control_plane_manager = ControlPlaneManager(control_configs=[config])
         self.campaign_id = uuid.uuid4()
         self.event = threading.Event()
@@ -30,14 +31,16 @@ class MockClient:
         # in case you want to reuse this Client again, reset the event
         self.event.clear()
         headers = create_userspace_message_headers(
-            source=self.client_sub_channel.replace('/', '.'),
-            destination=channel.replace('/', '.'),
+            source=self.client_sub_channel,
+            destination=channel,
             operation_id='operation_not_used',
             data_handler=IntersectDataHandler.MESSAGE,
             campaign_id=self.campaign_id,
             request_id=uuid.uuid4(),
         )
-        self.control_plane_manager.publish_message(channel, message, 'text/plain', headers, True)
+        self.control_plane_manager.publish_message_single(
+            channel, message, 'text/plain', headers, True, self.system_name
+        )
 
     def wait(self, timeout: float) -> None:
         self.event.wait(timeout)
