@@ -119,7 +119,7 @@ def test_subscription_strings(
         received_message, content_type, headers = mock_client.get_received_value()
         assert received_message == b'god yzal eht revo spmuj xof nworb kciuq eht'
         assert content_type == 'text/plain'
-        assert headers['source'] == client_pub_channel.replace('/', '.')
+        assert headers['source'] == client_pub_channel
     finally:
         mock_service.disconnect()
         mock_client.disconnect()

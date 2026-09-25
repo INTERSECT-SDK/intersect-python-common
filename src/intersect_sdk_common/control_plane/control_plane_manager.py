@@ -16,7 +16,7 @@ _CHANNEL_REGEX = re.compile(r'^[a-zA-Z0-9_*/-]+[a-zA-Z0-9_*#/-]$')
 - alphanumeric characters
 - hyphens
 - underscores
-- `/` (topic separator; note that this is '.' on the broker)
+- `/` (topic separator)
 - `*` (wildcard for exactly one word)
 - `#` (wildcard for any number of words, but can ONLY appear at the end of the topic string, see section 4.7.1.2 at https://docs.oasis-open.org/mqtt/mqtt/v3.1.1/os/mqtt-v3.1.1-os.html#_Toc398718107)
 

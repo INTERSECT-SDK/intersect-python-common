@@ -50,7 +50,7 @@ class TopicHandler:
                     # match any sequence of 0 or more words (make sure to allow for the separator)
                     regex_builder.append('[a-zA-Z0-9/_-]*')
                 elif char == '/':
-                    # in-memory topics use '/' as the separator, it is the protocol handler's responsibility to convert topics to use '/' as the separator
+                    # separator character
                     regex_builder.append('/')
                 else:
                     # ordinary character

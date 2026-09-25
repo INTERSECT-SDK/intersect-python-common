@@ -31,8 +31,8 @@ class MockClient:
         # in case you want to reuse this Client again, reset the event
         self.event.clear()
         headers = create_userspace_message_headers(
-            source=self.client_sub_channel.replace('/', '.'),
-            destination=channel.replace('/', '.'),
+            source=self.client_sub_channel,
+            destination=channel,
             operation_id='operation_not_used',
             data_handler=IntersectDataHandler.MESSAGE,
             campaign_id=self.campaign_id,
