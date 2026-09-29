@@ -74,6 +74,19 @@ def _amqp_2_hierarchy(amqp_routing_key: str) -> str:
     return amqp_routing_key.replace('.', '/')
 
 
+def _is_auth_error(err: BaseException) -> bool:
+    """Check if a connection error indicates that our credentials were rejected."""
+    return isinstance(
+        err,
+        pika.exceptions.AuthenticationError
+        | pika.exceptions.ProbableAuthenticationError
+        | pika.exceptions.ProbableAccessDeniedError,
+    ) or (
+        isinstance(err, pika.exceptions.ConnectionClosedByBroker)
+        and err.reply_code == 403  # ACCESS_REFUSED
+    )
+
+
 class AMQPClient(BrokerClient):
     """Client for performing broker actions backed by a AMQP broker.
 
@@ -119,6 +132,7 @@ class AMQPClient(BrokerClient):
         self._should_disconnect = False
         self._connection_retries = 0
         self._unrecoverable = False
+        self._credentials_invalid = False
         # tracking both channels is the best way to handle continuations
         self._channel_flags = MultiFlagThreadEvent(2)
 
@@ -192,6 +206,14 @@ class AMQPClient(BrokerClient):
             A boolean. True if can't recover, False otherwise.
         """
         return self._unrecoverable
+
+    def credentials_invalid(self) -> bool:
+        """Checks if the most recent connection attempt was rejected due to credentials/authorization.
+
+        Returns:
+            A boolean. True if credentials were rejected, False otherwise.
+        """
+        return self._credentials_invalid
 
     def publish(
         self, topic: str, payload: bytes, content_type: str, headers: dict[str, str], persist: bool
@@ -348,6 +370,7 @@ class AMQPClient(BrokerClient):
             f'On connect error received (probable broker config error), have tried {self._connection_retries} times'
         )
         logger.error(err)
+        self._credentials_invalid = _is_auth_error(err)
         if self._connection_retries >= _AMQP_MAX_RETRIES:
             # This will allow us to break out of the while loop
             # where we establish the connection, as ioloop.stop
@@ -358,12 +381,20 @@ class AMQPClient(BrokerClient):
             self._channel_flags.set_all()
             connection.ioloop.stop()
         else:
+            # only try to refresh credentials if we're still going to reconnect
+            if self._credentials_invalid and (
+                new_config := self._control_plane_manager.fetch_refreshed_config(self._system_name)
+            ):
+                # the next SelectConnection in _init_connection will use the new connection params
+                logger.info('Obtained refreshed AMQP broker config')
+                self._handle_config(new_config)
             logger.error('Reopening in 5 seconds')
             connection.ioloop.call_later(5, connection.ioloop.stop)
 
     def _on_connection_open(self, connection: pika.SelectConnection) -> None:
         logger.info('AMQP connection open')
         self._connection_retries = 0
+        self._credentials_invalid = False
         self._topics_to_consumer_tags.clear()
         connection.channel(on_open_callback=self._on_input_channel_open)
         connection.channel(on_open_callback=self._on_output_channel_open)

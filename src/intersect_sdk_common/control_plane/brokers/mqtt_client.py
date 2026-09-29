@@ -31,6 +31,9 @@ if TYPE_CHECKING:
 
 _MQTT_MAX_RETRIES = 10
 
+_MQTT_AUTH_REASON_CODES = (134, 135)
+"""'Bad user name or password' and 'Not authorized'. paho also maps MQTTv3 CONNACK codes 4 and 5 to these."""
+
 
 # TODO we should be handling hierarchy parts as a list of strings until they get to the client
 # this will be a breaking change, so only add it when ready to break
@@ -80,6 +83,7 @@ class MQTTClient(BrokerClient):
         self._connected = False
         self._should_disconnect = False
         self._unrecoverable = False
+        self._credentials_invalid = False
         self._connection_retries = 0
         self._connected_flag = threading.Event()
 
@@ -146,6 +150,14 @@ class MQTTClient(BrokerClient):
             A boolean. True if can't recover, False otherwise.
         """
         return self._unrecoverable
+
+    def credentials_invalid(self) -> bool:
+        """Checks if the most recent connection attempt was rejected due to credentials/authorization.
+
+        Returns:
+            A boolean. True if credentials were rejected, False otherwise.
+        """
+        return self._credentials_invalid
 
     def publish(
         self, topic: str, payload: bytes, content_type: str, headers: dict[str, str], persist: bool
@@ -306,6 +318,7 @@ class MQTTClient(BrokerClient):
             )
             self._connected = True
             self._connection_retries = 0
+            self._credentials_invalid = False
             self._should_disconnect = False
 
             # mimic "automatic QoS downgrade" of MQTTv3 for MQTTv5
@@ -327,7 +340,22 @@ class MQTTClient(BrokerClient):
             )
             logger.error('Connection error userdata: %s', userdata)
             logger.error('Connection error flags: %s', flags)
+            self._credentials_invalid = reason_code.value in _MQTT_AUTH_REASON_CODES
             if self._connection_retries >= _MQTT_MAX_RETRIES:
                 logger.error('Giving up MQTT reconnection attempt')
                 self._connected_flag.set()
                 self._unrecoverable = True
+            # only try to refresh credentials if we're still going to reconnect
+            elif (
+                self._credentials_invalid
+                and not self._should_disconnect
+                and (
+                    new_config := self._control_plane_manager.fetch_refreshed_config(
+                        self._system_name
+                    )
+                )
+            ):
+                # paho's automatic reconnect will use the new username/password
+                # host/port changes only apply on the next explicit connect(), since paho caches them from connect()
+                logger.info('Obtained refreshed MQTT broker config')
+                self._handle_config(new_config)

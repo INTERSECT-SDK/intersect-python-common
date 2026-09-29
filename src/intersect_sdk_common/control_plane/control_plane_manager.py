@@ -2,6 +2,7 @@
 
 import itertools
 import re
+from collections.abc import Callable
 
 from ..config import ControlPlaneConfig
 from ..exceptions import IntersectSetupError
@@ -53,13 +54,21 @@ class ControlPlaneManager:
     def __init__(
         self,
         control_configs: list[ControlPlaneConfig],
+        get_refreshed_config: Callable[[str], ControlPlaneConfig | None] | None = None,
     ) -> None:
         """Basic constructor.
 
         Some interaction with message brokers can change based on whether or not a Service or a Client is calling it.
 
         queue_name_generator should be a hardcoded value for Core Services, the SDK should provide its own function to generate queue names.
+
+        Params:
+          control_configs: configurations for each broker
+          get_refreshed_config: optional callback, called with a broker's system_name when that broker rejects our credentials.
+            It should return a new ControlPlaneConfig (i.e. freshly obtained from the registry service), or None to decline.
+            NOTE: this runs on the broker's IO thread while that broker is disconnected; it may block, but should not take forever.
         """
+        self._get_refreshed_config = get_refreshed_config
         self._control_providers = [
             _create_control_provider(config, self) for config in control_configs
         ]
@@ -76,6 +85,22 @@ class ControlPlaneManager:
             lambda p: p.system_name() == control_config.system_name, self._control_providers
         ):
             provider.refresh_config(control_config)
+
+    def fetch_refreshed_config(self, system_name: str) -> ControlPlaneConfig | None:
+        """Obtain new credentials for the broker with system_name, if a callback was provided.
+
+        This function is safe to call from the broker clients, as it does not mutate state.
+
+        Returns:
+          the new ControlPlaneConfig, or None if no callback was provided, the callback declined, or the callback raised
+        """
+        if self._get_refreshed_config is None:
+            return None
+        try:
+            return self._get_refreshed_config(system_name)
+        except Exception:  # noqa: BLE001 (user callback, must not kill the broker IO thread)
+            logger.exception('Unable to obtain refreshed broker config for system %s', system_name)
+            return None
 
     def add_subscription_channel(
         self,
@@ -271,4 +296,14 @@ class ControlPlaneManager:
         return any(
             control_provider.considered_unrecoverable()
             for control_provider in self._control_providers
+        )
+
+    def credentials_invalid(self) -> bool:
+        """Check if any broker most recently rejected our credentials.
+
+        Returns:
+          - True if any broker rejected our credentials on its latest connection attempt, False otherwise
+        """
+        return any(
+            control_provider.credentials_invalid() for control_provider in self._control_providers
         )

@@ -48,6 +48,15 @@ class BrokerClient(Protocol):
         """
         ...
 
+    def credentials_invalid(self) -> bool:
+        """Checks if the most recent connection attempt was rejected due to credentials/authorization.
+
+        Returns:
+            A boolean. True if credentials were rejected, False otherwise.
+            Must always be False if a disconnect was requested or the broker is considered unrecoverable, as shutdown takes priority.
+        """
+        ...
+
     def publish(
         self, topic: str, payload: bytes, content_type: str, headers: dict[str, str], persist: bool
     ) -> None:
