@@ -12,6 +12,7 @@ We follow [Common Changelog](https://common-changelog.org/) formatting for this 
 ### Added
 
 - Added `IntersectConfig` as representative of the configuration retrieved from the Registry Service at runtime ([commit 1](https://github.com/INTERSECT-SDK/intersect-python-common/commit/d4167449cca8fa05838379bc875c55876552d229) [commit 2](https://github.com/INTERSECT-SDK/intersect-python-common/commit/6e8053ee9555793b84bb2f4e0558c5a7df0ca0e1) (Lance Drane))
+- Added mechanism for registry service or other utilities to provide credentials ([commit](https://github.com/INTERSECT-SDK/intersect-python-common/commit/0554cdb6c31bb80cd0e6fc762944e15b7df6fbc6) (Lance Drane))
 
 ### Removed
 
