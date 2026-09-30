@@ -2,6 +2,7 @@
 
 import itertools
 import re
+from collections.abc import Callable
 
 from ..config import ControlPlaneConfig
 from ..exceptions import IntersectSetupError
@@ -16,7 +17,7 @@ _CHANNEL_REGEX = re.compile(r'^[a-zA-Z0-9_*/-]+[a-zA-Z0-9_*#/-]$')
 - alphanumeric characters
 - hyphens
 - underscores
-- `/` (topic separator; note that this is '.' on the broker)
+- `/` (topic separator)
 - `*` (wildcard for exactly one word)
 - `#` (wildcard for any number of words, but can ONLY appear at the end of the topic string, see section 4.7.1.2 at https://docs.oasis-open.org/mqtt/mqtt/v3.1.1/os/mqtt-v3.1.1-os.html#_Toc398718107)
 
@@ -34,22 +35,15 @@ def _create_control_provider(
         )
 
         return AMQPClient(
-            host=config.host,
-            port=config.port or 5672,
-            username=config.username,
-            password=config.password,
+            control_plane_config=config,
             control_plane_manager=control_plane_manager,
-            is_root=config.is_root,
         )
 
     # MQTT
     from .brokers.mqtt_client import MQTTClient  # noqa: PLC0415 (lazy load MQTT modules)
 
     return MQTTClient(
-        host=config.host,
-        port=config.port or 1883,
-        username=config.username,
-        password=config.password,
+        control_plane_config=config,
         control_plane_manager=control_plane_manager,
     )
 
@@ -60,13 +54,21 @@ class ControlPlaneManager:
     def __init__(
         self,
         control_configs: list[ControlPlaneConfig],
+        get_refreshed_config: Callable[[str], ControlPlaneConfig | None] | None = None,
     ) -> None:
         """Basic constructor.
 
         Some interaction with message brokers can change based on whether or not a Service or a Client is calling it.
 
         queue_name_generator should be a hardcoded value for Core Services, the SDK should provide its own function to generate queue names.
+
+        Params:
+          control_configs: configurations for each broker
+          get_refreshed_config: optional callback, called with a broker's system_name when that broker rejects our credentials.
+            It should return a new ControlPlaneConfig (i.e. freshly obtained from the registry service), or None to decline.
+            NOTE: this runs on the broker's IO thread while that broker is disconnected; it may block, but should not take forever.
         """
+        self._get_refreshed_config = get_refreshed_config
         self._control_providers = [
             _create_control_provider(config, self) for config in control_configs
         ]
@@ -76,6 +78,29 @@ class ControlPlaneManager:
         # topics_to_handlers are managed here and transcend connections/disconnections to the broker
         self._topics_to_handlers: dict[str, TopicHandler] = {}
         self._wildcards: dict[str, TopicHandler] = {}
+
+    def refresh_broker_config(self, control_config: ControlPlaneConfig) -> None:
+        """If a broker configuration is out of date, update it."""
+        for provider in filter(
+            lambda p: p.system_name() == control_config.system_name, self._control_providers
+        ):
+            provider.refresh_config(control_config)
+
+    def fetch_refreshed_config(self, system_name: str) -> ControlPlaneConfig | None:
+        """Obtain new credentials for the broker with system_name, if a callback was provided.
+
+        This function is safe to call from the broker clients, as it does not mutate state.
+
+        Returns:
+          the new ControlPlaneConfig, or None if no callback was provided, the callback declined, or the callback raised
+        """
+        if self._get_refreshed_config is None:
+            return None
+        try:
+            return self._get_refreshed_config(system_name)
+        except Exception:  # noqa: BLE001 (user callback, must not kill the broker IO thread)
+            logger.exception('Unable to obtain refreshed broker config for system %s', system_name)
+            return None
 
     def add_subscription_channel(
         self,
@@ -202,7 +227,7 @@ class ControlPlaneManager:
         for provider in self._control_providers:
             provider.disconnect()
 
-    def publish_message(
+    def publish_message_bulk(
         self,
         channel: str,
         payload: bytes,
@@ -210,13 +235,47 @@ class ControlPlaneManager:
         headers: dict[str, str],
         persist: bool,
     ) -> None:
-        """Publish message on channel for all brokers."""
-        if self.is_connected():
-            for provider in self._control_providers:
+        """Publish message on channel for all brokers.
+
+        Used for Event and Lifecycle messages.
+        """
+        for i, provider in enumerate(self._control_providers):
+            if provider.is_connected():
                 provider.publish(channel, payload, content_type, headers, persist)
-        else:
-            # TODO may want more robust error handling here
-            logger.error('Cannot send message, providers are not connected')
+            else:
+                logger.error(
+                    'Could not publish message to provider at index %d , debug %s', i, headers
+                )
+
+    def publish_message_single(
+        self,
+        channel: str,
+        payload: bytes,
+        content_type: str,
+        headers: dict[str, str],
+        persist: bool,
+        system_name: str,
+    ) -> bool:
+        """Publish message on channel for single broker, as determined by system_name param.
+
+        Used for Userspace messages.
+
+        Returns true if publish successful, false if publish failed
+        """
+        provider = next(
+            (p for p in self._control_providers if p.system_name() == system_name), None
+        )
+        if provider and provider.is_connected():
+            provider.publish(channel, payload, content_type, headers, persist)
+            return True
+
+        # TODO may want more robust error handling here
+        logger.error(
+            'Could not publish message to provider with system_name %s , debug %s',
+            system_name,
+            headers,
+        )
+        return False
 
     def is_connected(self) -> bool:
         """Check that we are connected to ALL configured brokers.
@@ -237,4 +296,14 @@ class ControlPlaneManager:
         return any(
             control_provider.considered_unrecoverable()
             for control_provider in self._control_providers
+        )
+
+    def credentials_invalid(self) -> bool:
+        """Check if any broker most recently rejected our credentials.
+
+        Returns:
+          - True if any broker rejected our credentials on its latest connection attempt, False otherwise
+        """
+        return any(
+            control_provider.credentials_invalid() for control_provider in self._control_providers
         )

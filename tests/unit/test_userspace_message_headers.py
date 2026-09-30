@@ -29,7 +29,7 @@ def test_valid_userspace_message_deserializes() -> None:
     headers = validate_userspace_message_headers(raw_headers)
     # check defaults
     assert headers.data_handler == IntersectDataHandler.MESSAGE
-    assert headers.has_error is False
+    assert headers.message_state == 'COMPLETE'
     # check type serializations
     assert isinstance(headers.message_id, uuid.UUID)
     assert isinstance(headers.created_at, datetime.datetime)
@@ -42,16 +42,16 @@ def test_unusual_userspace_message_deserializes() -> None:
         'campaign_id': 'dd88a2c9-7e47-409f-82c5-ef49914ae141',
         'request_id': 'ee88a2c9-7e47-409f-82c5-ef49914ae142',
         'operation_id': 'operation',
-        'source': 'source.one',
-        'destination': 'destination.two',
+        'source': 'source/one',
+        'destination': 'destination/two',
         'sdk_version': '0.5.0',
         'created_at': '2024',
         'data_handler': 'MINIO',
-        'has_error': 'true',
+        'message_state': 'ERROR',
     }
     headers = validate_userspace_message_headers(raw_headers)
     assert headers.data_handler == IntersectDataHandler.MINIO
-    assert headers.has_error is True
+    assert headers.message_state == 'ERROR'
     # even on strict mode, Pydantic can validate an integer as a string type, i.e. '"2024"' - it parses this as number of seconds since the Unix epoch
     assert headers.created_at.year == 1970
 
@@ -85,7 +85,7 @@ def test_invalid_does_not_deserialize() -> None:
         'sdk_version': '1.0.0+20130313144700',
         'created_at': '2024-01-19T20:21:14.045591',
         'data_handler': 'COBOL',
-        'has_error': 'I_AM_NOT_A_BOOLEAN',
+        'message_state': 'I_AM_NOT_A_BOOLEAN',
     }
     with pytest.raises(ValidationError) as err:
         validate_userspace_message_headers(raw_headers)
@@ -105,6 +105,7 @@ def test_invalid_does_not_deserialize() -> None:
     assert {'type': 'string_pattern_mismatch', 'loc': ('sdk_version',)} in errors
     # can't transpose these values into the enumerations
     assert {'type': 'enum', 'loc': ('data_handler',)} in errors
+    assert {'type': 'literal_error', 'loc': ('message_state',)} in errors
 
 
 def test_create_userspace_message() -> None:
@@ -131,7 +132,7 @@ def test_create_userspace_message() -> None:
     # enforce UTC
     assert msg['created_at'][-6:] == '+00:00'
     # this should be lowercase for maximum language capability
-    assert msg['has_error'] == 'false'
+    assert msg['message_state'] == 'COMPLETE'
     assert msg['operation_id'] == 'operation'
     assert msg['data_handler'] == 'MESSAGE'
     assert msg['sdk_version'] == intersect_sdk_version_string

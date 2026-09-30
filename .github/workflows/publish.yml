@@ -27,7 +27,7 @@ jobs:
       - name: Publish package to PyPI
         run: uv publish
       - name: upload to github release
-        uses: docker://antonyurchenko/git-release:v5
+        uses: docker://antonyurchenko/git-release:v7
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # assume any version with "a" (gets "ALPHA") or "b" (gets BETA) or "rc" (release candidates) will be a prerelease

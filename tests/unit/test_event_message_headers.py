@@ -36,7 +36,7 @@ def test_valid_event_message_deserializes() -> None:
 def test_unusual_event_message_deserializes() -> None:
     raw_headers = {
         'message_id': 'cc88a2c9-7e47-409f-82c5-ef49914ae140',
-        'source': 'source.one',
+        'source': 'source/one',
         'sdk_version': '0.5.0',
         'created_at': '2024',
         'data_handler': 'MINIO',

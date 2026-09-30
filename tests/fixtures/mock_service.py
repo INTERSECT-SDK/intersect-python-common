@@ -10,6 +10,7 @@ class MockService:
     """A mock service for testing purposes."""
 
     def __init__(self, config: ControlPlaneConfig, channels: list[str]) -> None:
+        self.system_name = config.system_name
         self.control_plane_manager = ControlPlaneManager(control_configs=[config])
         queue_name = str(uuid.uuid4())
         # make multiple queues to ensure we make sure messages are directed to the appropriate queues
@@ -30,8 +31,8 @@ class MockService:
             uuid.UUID(headers['request_id']),
         )
         content_type = 'text/plain'
-        self.control_plane_manager.publish_message(
-            headers['source'], reply_message, content_type, reply_headers, True
+        self.control_plane_manager.publish_message_single(
+            headers['source'], reply_message, content_type, reply_headers, True, self.system_name
         )
 
     def connect(self) -> None:

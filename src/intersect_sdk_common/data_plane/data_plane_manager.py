@@ -4,7 +4,7 @@ import random
 
 from pydantic import TypeAdapter, ValidationError
 
-from ..config import DataStoreConfigMap, HierarchyConfig
+from ..config import DataStoreConfigMap
 from ..core_definitions import IntersectDataHandler, IntersectMimeType
 from ..exceptions import IntersectError
 from ..logger import logger
@@ -19,14 +19,16 @@ class DataPlaneManager:
     The API supports extensive plug-and-play for different data providers.
     """
 
-    def __init__(self, hierarchy: HierarchyConfig, data_configs: DataStoreConfigMap) -> None:
+    def __init__(self, system: str, service: str, data_configs: DataStoreConfigMap) -> None:
         """Inside the constructor, we verify that all data configuration credentials are correct.
 
         Params:
-          hierarchy: Hierarchy configuration
+          system: name of system
+          service: name of service
           data_configs: data configuration
         """
-        self._hierarchy = hierarchy
+        self._system = system
+        self._service = service
         self._minio_providers = list(map(create_minio_store, data_configs.minio))
 
         # warn users about missing data plane
@@ -99,7 +101,7 @@ class DataPlaneManager:
                 raise IntersectError
             provider = random.choice(self._minio_providers)  # noqa: S311 (TODO choose a MINIO provider better than at random - this may be determined from external message params)
             minio_payload = send_minio_object(
-                function_response, provider, content_type, self._hierarchy
+                function_response, provider, content_type, self._system, self._service
             )
             return MINIO_ADAPTER.dump_json(minio_payload)
 

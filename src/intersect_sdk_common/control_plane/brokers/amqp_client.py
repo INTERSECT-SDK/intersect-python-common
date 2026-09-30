@@ -1,7 +1,7 @@
 """This module handles ALL AMQP protocol logic in INTERSECT. We seek to entirely abstract protocols away from users.
 
 This is a very specific pub-sub model which assumes a single topic exchange.
-AMQP topics in INTERSECT generally look like ${ORGANIZATION}.${FACILITY}.${SYSTEM}.${SUBSYSTEM}.${SERVICE}.${MESSAGE_TYPE} . (TODO change to ${SYSTEM}.${SERVICE}.${MESSAGE_TYPE})
+AMQP topics in INTERSECT generally look like ${SYSTEM}.${SERVICE}.${MESSAGE_TYPE} , with additional extensions after ${MESSAGE_TYPE} optional.
 MESSAGE_TYPE refers to INTERSECT domain messages - we do not allow users to determine their own message types directly, and every message has a message type.
 SERVICE refers to a specific application, generally the microservice which is handling the message.
 SYSTEM is generally the level where Auth should occur, and where you should configure access control on the broker itself.
@@ -20,13 +20,14 @@ import pika.frame
 
 from ...logger import logger
 from ...utils.multi_flag_thread_event import MultiFlagThreadEvent
-from .broker_client import BrokerClient
+from .broker_client import GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS, BrokerClient
 
 if TYPE_CHECKING:
     from pika.channel import Channel
     from pika.frame import Frame
     from pika.spec import Basic, BasicProperties
 
+    from ...config import ControlPlaneConfig
     from ..control_plane_manager import ControlPlaneManager
     from ..definitions import MessageCallback
 
@@ -73,6 +74,19 @@ def _amqp_2_hierarchy(amqp_routing_key: str) -> str:
     return amqp_routing_key.replace('.', '/')
 
 
+def _is_auth_error(err: BaseException) -> bool:
+    """Check if a connection error indicates that our credentials were rejected."""
+    return isinstance(
+        err,
+        pika.exceptions.AuthenticationError
+        | pika.exceptions.ProbableAuthenticationError
+        | pika.exceptions.ProbableAccessDeniedError,
+    ) or (
+        isinstance(err, pika.exceptions.ConnectionClosedByBroker)
+        and err.reply_code == 403  # ACCESS_REFUSED
+    )
+
+
 class AMQPClient(BrokerClient):
     """Client for performing broker actions backed by a AMQP broker.
 
@@ -89,36 +103,16 @@ class AMQPClient(BrokerClient):
 
     def __init__(
         self,
-        host: str,
-        port: int,
-        username: str,
-        password: str,
+        control_plane_config: ControlPlaneConfig,
         control_plane_manager: ControlPlaneManager,
-        is_root: bool,
     ) -> None:
         """The default constructor.
 
         Args:
-            host: String for hostname of AMQP broker
-            port: port number of AMQP broker
-            username: username credentials for AMQP broker
-            password: password credentials for AMQP broker
+            control_plane_config: configuration for the AMQP broker connection
             control_plane_manager: reference to the ControlPlaneManager instance, remember to ONLY use functions which do not mutate state
-            is_root: Whether or not the client can configure exchanges and queues themselves (core services), or if this must be delegated to a Core Service (SDK Clients/Services)
         """
-        self._connection_params = pika.ConnectionParameters(
-            host=host,
-            port=port,
-            virtual_host='/',
-            credentials=pika.PlainCredentials(username, password),
-            connection_attempts=3,
-            # if not specified, this value is obtained by the broker. RabbitMQ sets it to 60s by default
-            heartbeat=10,
-            blocked_connection_timeout=5.0,
-            retry_delay=0.5,
-        )
-
-        self._is_root = is_root
+        self._handle_config(control_plane_config)
 
         # The pika connection to the broker
         self._connection: pika.adapters.SelectConnection = None
@@ -138,8 +132,27 @@ class AMQPClient(BrokerClient):
         self._should_disconnect = False
         self._connection_retries = 0
         self._unrecoverable = False
+        self._credentials_invalid = False
         # tracking both channels is the best way to handle continuations
         self._channel_flags = MultiFlagThreadEvent(2)
+
+    def _handle_config(self, control_plane_config: ControlPlaneConfig) -> None:
+        self._connection_params = pika.ConnectionParameters(
+            host=control_plane_config.host,
+            port=control_plane_config.port or 5672,
+            virtual_host='/',
+            credentials=pika.PlainCredentials(
+                control_plane_config.username, control_plane_config.password
+            ),
+            connection_attempts=3,
+            # if not specified, this value is obtained by the broker. RabbitMQ sets it to 60s by default
+            heartbeat=10,
+            blocked_connection_timeout=5.0,
+            retry_delay=0.5,
+        )
+
+        self._is_root = control_plane_config.is_root
+        self._system_name = control_plane_config.system_name
 
     def connect(self) -> None:
         """Connect to the defined broker.
@@ -167,8 +180,12 @@ class AMQPClient(BrokerClient):
         self._connection.close()
 
         if self._thread:
-            # If gracefully shutting down, we should finish up the current job.
-            self._thread.join(5 if self.considered_unrecoverable() else None)
+            # If gracefully shutting down, give the in-flight message being handled (if any) a
+            # bounded amount of time to finish/publish before we give up on it; if the broker is
+            # unrecoverable there's no point waiting at all.
+            self._thread.join(
+                0 if self.considered_unrecoverable() else GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS
+            )
             self._thread = None
 
     def is_connected(self) -> bool:
@@ -189,6 +206,14 @@ class AMQPClient(BrokerClient):
             A boolean. True if can't recover, False otherwise.
         """
         return self._unrecoverable
+
+    def credentials_invalid(self) -> bool:
+        """Checks if the most recent connection attempt was rejected due to credentials/authorization.
+
+        Returns:
+            A boolean. True if credentials were rejected, False otherwise.
+        """
+        return self._credentials_invalid
 
     def publish(
         self, topic: str, payload: bytes, content_type: str, headers: dict[str, str], persist: bool
@@ -253,6 +278,14 @@ class AMQPClient(BrokerClient):
         if consumer_tag_info:
             self._cancel_consumer_tag(amqp_topic, consumer_tag_info.consumer_tag)
 
+    def system_name(self) -> str:
+        """Return the ecosystem system name."""
+        return self._system_name
+
+    def refresh_config(self, config: ControlPlaneConfig) -> None:
+        """Refresh the config with the new one from the registry service."""
+        self._handle_config(config)
+
     def _cancel_consumer_tag(self, topic: str, consumer_tag: str) -> None:
         if self._channel_in and self._channel_in.is_open:
             cb = functools.partial(
@@ -277,8 +310,9 @@ class AMQPClient(BrokerClient):
         logger.info('Unsubscribed from %s', topic)
         try:
             thread = self._consumer_tags_to_threads[consumer_tag]
-            # kill thread immediately if not recoverable, wait to send last message if we are shutting down gracefully
-            thread.join(0 if self.considered_unrecoverable() else None)
+            # kill thread immediately if not recoverable, otherwise give it a bounded amount of
+            # time to finish handling/publishing its current message before we give up on it
+            thread.join(0 if self.considered_unrecoverable() else GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS)
             del self._consumer_tags_to_threads[consumer_tag]
             logger.debug('Consumer cancelled')
         except KeyError:
@@ -327,11 +361,16 @@ class AMQPClient(BrokerClient):
 
         This function usually implies a misconfiguration in the application config.
         """
+        if self._should_disconnect:
+            logger.info('Disconnect requested, giving up AMQP reconnection attempt')
+            connection.ioloop.stop()
+            return
         self._connection_retries += 1
         logger.error(
             f'On connect error received (probable broker config error), have tried {self._connection_retries} times'
         )
         logger.error(err)
+        self._credentials_invalid = _is_auth_error(err)
         if self._connection_retries >= _AMQP_MAX_RETRIES:
             # This will allow us to break out of the while loop
             # where we establish the connection, as ioloop.stop
@@ -342,12 +381,20 @@ class AMQPClient(BrokerClient):
             self._channel_flags.set_all()
             connection.ioloop.stop()
         else:
+            # only try to refresh credentials if we're still going to reconnect
+            if self._credentials_invalid and (
+                new_config := self._control_plane_manager.fetch_refreshed_config(self._system_name)
+            ):
+                # the next SelectConnection in _init_connection will use the new connection params
+                logger.info('Obtained refreshed AMQP broker config')
+                self._handle_config(new_config)
             logger.error('Reopening in 5 seconds')
             connection.ioloop.call_later(5, connection.ioloop.stop)
 
     def _on_connection_open(self, connection: pika.SelectConnection) -> None:
         logger.info('AMQP connection open')
         self._connection_retries = 0
+        self._credentials_invalid = False
         self._topics_to_consumer_tags.clear()
         connection.channel(on_open_callback=self._on_input_channel_open)
         connection.channel(on_open_callback=self._on_output_channel_open)
@@ -633,6 +680,9 @@ class AMQPClient(BrokerClient):
                     basic_deliver.delivery_tag,
                     persist,
                 ),
+                # daemon so that a message which is still being handled past GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS
+                # cannot block the application from exiting once we've given up waiting on it
+                daemon=True,
             )
             self._consumer_tags_to_threads[consumer_tag_info.consumer_tag] = thrd
             thrd.start()
